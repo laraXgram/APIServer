@@ -1,35 +1,23 @@
 {
     "name": "laraxgram/apiserver",
-    "description": "LaraGram Server: a Telegram Bot API server built on LaraGram MTProto.",
-    "type": "library",
+    "description": "A Telegram Bot API server built on LaraGram MTProto.",
+    "keywords": [
+        "laragram",
+        "apiserver",
+        "telegram-bot-api",
+        "bot",
+        "telegram",
+        "mtproto"
+    ],
     "license": "MIT",
+    "support": {
+        "issues": "https://github.com/laraxgram/apiserver/issues",
+        "source": "https://github.com/laraxgram/apiserver"
+    },
     "authors": [
         {
             "name": "AmirHossein",
-            "email": "amirh.kargar85@gmail.com"
-        }
-    ],
-    "repositories": [
-        {
-            "type": "path",
-            "url": "/home/amirhossein/Desktop/LaraGram/MTProto",
-            "options": {
-                "symlink": true
-            }
-        },
-        {
-            "type": "path",
-            "url": "/home/amirhossein/Desktop/LaraGram/Surge",
-            "options": {
-                "symlink": true
-            }
-        },
-        {
-            "type": "path",
-            "url": "/home/amirhossein/Desktop/LaraGram/core",
-            "options": {
-                "symlink": true
-            }
+            "email": "isfahan@duck.com"
         }
     ],
     "require": {
@@ -37,18 +25,37 @@
         "ext-json": "*",
         "ext-swoole": "*",
         "ext-mbstring": "*",
-        "laraxgram/core": "4.x-dev",
-        "laraxgram/mtproto": "*@dev",
-        "laraxgram/surge": "dev-master as 1.99.0"
+        "laraxgram/core": "^4",
+        "laraxgram/mtproto": "^0",
+        "laraxgram/surge": "^1"
     },
     "autoload": {
         "psr-4": {
             "LaraGram\\Server\\": "src/"
         }
     },
+    "scripts": {
+        "post-autoload-dump": [
+            "@php vendor/laraxgram/apiserver/bin/generate"
+        ],
+        "post-update-cmd": [
+            "@php vendor/laraxgram/apiserver/bin/generate"
+        ],
+        "post-root-package-install": [
+            "@php vendor/laraxgram/apiserver/bin/generate"
+        ],
+        "post-create-project-cmd": [
+            "@php vendor/laraxgram/apiserver/bin/generate"
+        ]
+    },
     "bin": [
         "bin/laragram-server"
     ],
+    "extra": {
+        "branch-alias": {
+            "dev-master": "0.x-dev"
+        }
+    },
     "config": {
         "sort-packages": true
     },
