@@ -4,7 +4,7 @@ LaraGram API Server: A Telegram Bot API server built on LaraGram MTProto.
 
 ## Official Documentation
 
-Documentation for LaraGram API Server can be found on the [LaraGram website](https://laraxgram.github.io/v4/api-server).
+Documentation for LaraGram API Server can be found on the [LaraGram website](https://laraxgram.github.io/v4/apiserver).
 
 ## Contributing
 
