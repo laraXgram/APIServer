@@ -1,0 +1,57 @@
+{
+    "name": "laraxgram/apiserver",
+    "description": "LaraGram Server: a Telegram Bot API server built on LaraGram MTProto.",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "AmirHossein",
+            "email": "amirh.kargar85@gmail.com"
+        }
+    ],
+    "repositories": [
+        {
+            "type": "path",
+            "url": "/home/amirhossein/Desktop/LaraGram/MTProto",
+            "options": {
+                "symlink": true
+            }
+        },
+        {
+            "type": "path",
+            "url": "/home/amirhossein/Desktop/LaraGram/Surge",
+            "options": {
+                "symlink": true
+            }
+        },
+        {
+            "type": "path",
+            "url": "/home/amirhossein/Desktop/LaraGram/core",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "ext-json": "*",
+        "ext-swoole": "*",
+        "ext-mbstring": "*",
+        "laraxgram/core": "4.x-dev",
+        "laraxgram/mtproto": "*@dev",
+        "laraxgram/surge": "dev-master as 1.99.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "LaraGram\\Server\\": "src/"
+        }
+    },
+    "bin": [
+        "bin/laragram-server"
+    ],
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

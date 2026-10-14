@@ -1,0 +1,16 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use LaraGram\Console\Output\ConsoleOutput;
+use LaraGram\Server\Console\ServerCommand;
+
+foreach ([__DIR__.'/../vendor/autoload.php', __DIR__.'/../../../autoload.php'] as $autoload) {
+    if (is_file($autoload)) {
+        require $autoload;
+        break;
+    }
+}
+
+exit((new ServerCommand())->main($_SERVER['argv'], new ConsoleOutput()));

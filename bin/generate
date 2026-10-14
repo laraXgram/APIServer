@@ -1,0 +1,12 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use LaraGram\Console\Input\ArgvInput;
+use LaraGram\Console\Output\ConsoleOutput;
+use LaraGram\Server\Console\GenerateCommand;
+
+require __DIR__.'/../vendor/autoload.php';
+
+exit((new GenerateCommand(dirname(__DIR__)))->run(new ArgvInput(), new ConsoleOutput()));
