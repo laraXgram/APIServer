@@ -14,6 +14,7 @@ use LaraGram\Filesystem\Filesystem;
 use LaraGram\Log\Logger\Handler\StreamHandler;
 use LaraGram\Log\Logger\Level;
 use LaraGram\Log\Logger\Logger;
+use LaraGram\MTProto\TL\Compiler\SchemaCompiler;
 use LaraGram\Server\Foundation\ServerParameters;
 use LaraGram\Server\Generated\MethodTable;
 use LaraGram\Server\Http\HttpServer;
@@ -118,6 +119,10 @@ final class ServerCommand extends Command
             return 1;
         }
 
+        if (!$this->ensureSchemaCompiled($output)) {
+            return 1;
+        }
+
         if ($parameters->defaultMaxWebhookConnections <= 0) {
             $parameters->defaultMaxWebhookConnections = $parameters->localMode ? 100 : 40;
         }
@@ -189,6 +194,33 @@ final class ServerCommand extends Command
         }
 
         return $settings;
+    }
+
+    /**
+     * MTProto builds its TL classes from a composer script of its own, which
+     * composer skips when MTProto is not the root package (a global install
+     * or a project requiring this server), so build them here when missing.
+     * The check looks for the file: asking the autoloader would make it
+     * remember the class as missing.
+     */
+    private function ensureSchemaCompiled(OutputInterface $output): bool
+    {
+        $compiler = new SchemaCompiler();
+        if (is_file($compiler->outputDirectory().'/ClientMethods.php')) {
+            return true;
+        }
+
+        $output->writeln("Compiling the MTProto TL schema into {$compiler->outputDirectory()}");
+
+        try {
+            $compiler->compile();
+        } catch (\Throwable $e) {
+            $output->writeln("Can't compile the MTProto TL schema: {$e->getMessage()}");
+
+            return false;
+        }
+
+        return true;
     }
 
     /**
