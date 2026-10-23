@@ -27,7 +27,7 @@
         "ext-mbstring": "*",
         "laraxgram/core": "^4.5",
         "laraxgram/mtproto": "^0.4",
-        "laraxgram/surge": "^1.2"
+        "laraxgram/surge": "^2.0"
     },
     "autoload": {
         "psr-4": {
