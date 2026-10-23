@@ -25,9 +25,9 @@
         "ext-json": "*",
         "ext-swoole": "*",
         "ext-mbstring": "*",
-        "laraxgram/core": "^4",
-        "laraxgram/mtproto": "^0",
-        "laraxgram/surge": "^1"
+        "laraxgram/core": "^4.5",
+        "laraxgram/mtproto": "^0.4",
+        "laraxgram/surge": "^1.2"
     },
     "autoload": {
         "psr-4": {
