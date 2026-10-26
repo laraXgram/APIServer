@@ -123,7 +123,10 @@ trait BotManagementMethods
         $this->invokeOrFail('bots.setCustomVerification', self::untl(self::tl('bots.setCustomVerification', [
             'enabled' => $isVerified,
             'peer' => $this->inputPeer($chatId),
-            'custom_description' => $customDescription !== '' ? $customDescription : null,
+            // A textWithEntities since layer 232; the Bot API sends plain text.
+            'custom_description' => $customDescription !== ''
+                ? self::tl('textWithEntities', ['text' => $customDescription, 'entities' => []])
+                : null,
         ])));
     }
 
