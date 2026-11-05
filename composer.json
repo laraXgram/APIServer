@@ -25,7 +25,7 @@
         "ext-json": "*",
         "ext-swoole": "*",
         "ext-mbstring": "*",
-        "laraxgram/core": "^4.5",
+        "laraxgram/core": "^4.7",
         "laraxgram/mtproto": "^0.4",
         "laraxgram/surge": "^2.0"
     },
