@@ -7,15 +7,16 @@ namespace LaraGram\Server\Http;
 use LaraGram\Server\Bot\ClientManager;
 use LaraGram\Server\Foundation\ServerParameters;
 use LaraGram\Server\Stats\ServerCpuStat;
-use Swoole\Http\Request;
-use Swoole\Http\Response;
-use Swoole\Http\Server;
+use Swoole\Server;
 use Swoole\Timer;
 
 /**
- * The Swoole HTTP server hosting the Bot API and, optionally, the
- * statistics port. One worker owns every bot for now, so all traffic of a
- * bot stays in the process that holds its MTProto connection.
+ * The TCP server hosting the Bot API and, optionally, the statistics port.
+ * One worker owns every bot for now, so all traffic of a bot stays in the
+ * process that holds its MTProto connection.
+ *
+ * It is a plain TCP server because Swoole's HTTP server keeps a whole request
+ * in memory; {@see HttpMessageParser} reads requests as they arrive instead.
  */
 final class HttpServer
 {
@@ -25,6 +26,9 @@ final class HttpServer
     private ?ClientManager $clientManager = null;
 
     private ?HttpConnection $connection = null;
+
+    /** @var array<int, HttpInboundConnection> */
+    private array $connections = [];
 
     /**
      * @param array<string, mixed> $settings
@@ -43,11 +47,7 @@ final class HttpServer
             'worker_num' => 1,
             'enable_coroutine' => true,
             'hook_flags' => SWOOLE_HOOK_ALL,
-            'http_parse_post' => false,
-            'http_parse_cookie' => false,
-            'http_compression' => false,
-            'upload_tmp_dir' => $this->parameters->tempDirectory,
-            'package_max_length' => $this->parameters->localMode ? 0x7FFFFFFF : 512 * 1024 * 1024,
+            'send_yield' => true,
             'heartbeat_check_interval' => 60,
             'heartbeat_idle_time' => self::IDLE_TIMEOUT,
             'max_wait_time' => 30,
@@ -67,13 +67,12 @@ final class HttpServer
 
         $statPort = (int) $this->settings['http_stat_port'];
         if ($statPort !== 0) {
-            $server->addListener($this->settings['http_stat_ip_address'], $statPort, SWOOLE_SOCK_TCP)
-                ->set(['open_http_protocol' => true]);
+            $server->addListener($this->settings['http_stat_ip_address'], $statPort, SWOOLE_SOCK_TCP);
         }
 
         $server->on('workerStart', function (Server $server): void {
             $this->clientManager = new ClientManager($this->parameters, $this->settings['token_range']);
-            $this->connection = new HttpConnection($server, $this->clientManager, $this->parameters);
+            $this->connection = new HttpConnection($this->clientManager);
             \Swoole\Coroutine::create(fn () => $this->clientManager?->restoreWebhooks());
 
             Timer::tick(1000, function (): void {
@@ -88,14 +87,29 @@ final class HttpServer
             Timer::clearAll();
         });
 
-        $server->on('request', function (Request $request, Response $response) use ($statPort): void {
-            if ($statPort !== 0 && (int) ($request->server['server_port'] ?? 0) === $statPort) {
-                $this->connection->handleStat($request, $response);
+        $server->on('connect', function (Server $server, int $fd) use ($statPort): void {
+            $info = $server->getClientInfo($fd);
+            $isStat = $statPort !== 0 && (int) ($info['server_port'] ?? 0) === $statPort;
 
-                return;
-            }
+            $this->connections[$fd] = new HttpInboundConnection(
+                $server,
+                $fd,
+                (string) ($info['remote_ip'] ?? ''),
+                $this->parameters->tempDirectory,
+                $this->parameters->logger,
+                $isStat
+                    ? fn (array $request, HttpInboundConnection $connection) => $this->connection->handleStat($request, $connection)
+                    : fn (array $request, HttpInboundConnection $connection) => $this->connection->handle($request, $connection),
+            );
+        });
 
-            $this->connection->handle($request, $response);
+        $server->on('receive', function (Server $server, int $fd, int $reactorId, string $data): void {
+            ($this->connections[$fd] ?? null)?->receive($data);
+        });
+
+        $server->on('close', function (Server $server, int $fd): void {
+            ($this->connections[$fd] ?? null)?->onClosed();
+            unset($this->connections[$fd]);
         });
 
         $server->start();

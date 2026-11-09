@@ -5,14 +5,10 @@ declare(strict_types=1);
 namespace LaraGram\Server\Http;
 
 use LaraGram\Server\Bot\ClientManager;
-use LaraGram\Server\Foundation\ServerParameters;
-use Swoole\Http\Request;
-use Swoole\Http\Response;
-use Swoole\Http\Server;
 
 /**
- * Handles one Bot API HTTP request: a port of telegram_bot_api::HttpConnection
- * plus the response writing of td::HttpConnectionBase.
+ * Answers one Bot API HTTP request: a port of telegram_bot_api::HttpConnection
+ * and HttpStatConnection.
  */
 final class HttpConnection
 {
@@ -31,86 +27,38 @@ final class HttpConnection
     ];
 
     public function __construct(
-        private readonly Server $server,
         private readonly ClientManager $clientManager,
-        private readonly ServerParameters $parameters,
     ) {
+    }
+
+    public static function reason(int $status): string
+    {
+        return self::REASONS[$status] ?? 'Internal Server Error';
     }
 
     /**
      * HttpStatConnection: the statistics page, for any path of the statistics port.
+     *
+     * @param array<string, mixed> $read
      */
-    public function handleStat(Request $request, Response $response): void
+    public function handleStat(array $read, HttpInboundConnection $connection): void
     {
-        $read = $this->readRequest($request, $response);
-        if ($read === null) {
-            return;
-        }
-        $content = $this->clientManager->getStats($read['args']);
-
-        $response->status(200, 'OK');
-        $response->header('Server', '', false);
-        $response->header('Date', '', false);
-        $response->header('Connection', 'keep-alive');
-        $response->header('Content-Type', 'text/plain');
-        $response->end($content);
+        $this->sendResponse($connection, $read, 200, $this->clientManager->getStats($read['args']), 'text/plain');
     }
 
     /**
-     * HttpReader: the parsed request, or null after answering a malformed one.
-     *
-     * @return array<string, mixed>|null
+     * @param array<string, mixed> $read
      */
-    private function readRequest(Request $request, Response $response): ?array
+    public function handle(array $read, HttpInboundConnection $connection): void
     {
-        // HttpReader::parse_head: only GET and POST requests are served
-        $method = (string) ($request->server['request_method'] ?? '');
-        if ($method !== 'GET' && $method !== 'POST') {
-            $this->sendReaderError($request, $response, 501);
-
-            return null;
-        }
-
-        $headers = [];
-        foreach ($request->header ?? [] as $name => $value) {
-            $headers[] = [(string) $name, RequestReader::trim((string) $value)];
-        }
-
-        $target = (string) ($request->server['request_uri'] ?? '/');
-        if (isset($request->server['query_string'])) {
-            $target .= '?'.$request->server['query_string'];
-        }
-
-        try {
-            $read = (new RequestReader($this->parameters->tempDirectory, $this->parameters->logger))
-                ->read($target, $headers, (string) $request->rawContent());
-        } catch (HttpReaderException $e) {
-            $this->parameters->logger->info($e->getMessage());
-            $this->sendReaderError($request, $response, $e->getCode());
-
-            return null;
-        }
-        $read['headers'] = $headers;
-
-        return $read;
-    }
-
-    public function handle(Request $request, Response $response): void
-    {
-        $read = $this->readRequest($request, $response);
-        if ($read === null) {
-            return;
-        }
-        $headers = $read['headers'];
-
         $path = $read['path'];
         if (!str_starts_with($path, '/')) {
-            $this->sendHttpError($response, 404, 'Not Found: absolute URI is specified in the Request-Line');
+            $this->sendHttpError($connection, $read, 404, 'Not Found: absolute URI is specified in the Request-Line');
 
             return;
         }
         if (!str_starts_with($path, '/bot')) {
-            $this->sendHttpError($response, 404, 'Not Found');
+            $this->sendHttpError($connection, $read, 404, 'Not Found');
 
             return;
         }
@@ -119,7 +67,7 @@ final class HttpConnection
         $rest = substr($path, 4);
         $slash = strpos($rest, '/');
         if ($slash === false) {
-            $this->sendHttpError($response, 404, 'Not Found');
+            $this->sendHttpError($connection, $read, 404, 'Not Found');
 
             return;
         }
@@ -132,7 +80,7 @@ final class HttpConnection
             $rest = substr($rest, 5);
         }
         if (!str_starts_with($rest, '/')) {
-            $this->sendHttpError($response, 404, 'Not Found');
+            $this->sendHttpError($connection, $read, 404, 'Not Found');
 
             return;
         }
@@ -142,11 +90,11 @@ final class HttpConnection
             $isTestDc,
             substr($rest, 1),
             $read['args'],
-            $headers,
+            $read['headers'],
             $read['files'],
-            (string) ($request->server['remote_addr'] ?? ''),
+            $connection->remoteAddress,
         );
-        $query->rawSize = strlen((string) $request->getData());
+        $query->rawSize = $read['raw_size'];
 
         try {
             $this->clientManager->send($query);
@@ -155,39 +103,28 @@ final class HttpConnection
             $query->cleanup();
         }
 
-        $this->sendResponse($response, $query->httpStatusCode(), $query->answerBody(), $query->retryAfter());
-    }
-
-    private function sendResponse(Response $response, int $status, string $content, int $retryAfter = 0): void
-    {
-        $response->status($status, self::REASONS[$status] ?? 'Internal Server Error');
-        $response->header('Server', '', false);
-        $response->header('Date', '', false);
-        $response->header('Connection', 'keep-alive');
-        $response->header('Content-Type', 'application/json');
-        if ($retryAfter > 0) {
-            $response->header('Retry-After', (string) $retryAfter);
-        }
-        $response->end($content);
-    }
-
-    private function sendHttpError(Response $response, int $status, string $description): void
-    {
-        $this->sendResponse($response, $status, Query::errorJson($status, $description));
+        $this->sendResponse($connection, $read, $query->httpStatusCode(), $query->answerBody(), 'application/json', $query->retryAfter());
     }
 
     /**
-     * A request that could not be read gets the bare status line and an empty
-     * body, and the connection is closed.
+     * @param array<string, mixed> $read
      */
-    private function sendReaderError(Request $request, Response $response, int $status): void
+    private function sendResponse(HttpInboundConnection $connection, array $read, int $status, string $content, string $contentType, int $retryAfter = 0): void
     {
-        $response->status($status, self::REASONS[$status] ?? 'Internal Server Error');
-        $response->header('Server', '', false);
-        $response->header('Date', '', false);
-        $response->header('Connection', '', false);
-        $response->header('Content-Type', '', false);
-        $response->end();
-        $this->server->close($request->fd);
+        $head = "HTTP/1.1 {$status} ".self::reason($status)."\r\nConnection: keep-alive\r\nContent-Type: {$contentType}\r\n";
+        if ($retryAfter > 0) {
+            $head .= "Retry-After: {$retryAfter}\r\n";
+        }
+        $head .= 'Content-Length: '.strlen($content)."\r\n\r\n";
+
+        $connection->write($head.$content, $read['keep_alive']);
+    }
+
+    /**
+     * @param array<string, mixed> $read
+     */
+    private function sendHttpError(HttpInboundConnection $connection, array $read, int $status, string $description): void
+    {
+        $this->sendResponse($connection, $read, $status, Query::errorJson($status, $description), 'application/json');
     }
 }
