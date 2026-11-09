@@ -8,6 +8,7 @@ use LaraGram\Filesystem\Filesystem;
 use LaraGram\MTProto\Foundation\FileDecoder;
 use LaraGram\MTProto\Store\FileStore;
 use LaraGram\Server\Bot\QueryError;
+use LaraGram\Server\Files\BoundedFileDecoder;
 use LaraGram\Server\Files\FileIdException;
 use LaraGram\Server\Files\FileType;
 use LaraGram\Server\Files\PhotoSizeSource;
@@ -142,10 +143,14 @@ trait FileMethods
         $files->ensureDirectoryExists($tempDir, 0750);
         $tempPath = $tempDir.bin2hex(random_bytes(8));
 
+        $decoder = $this->parameters->localMode ? new FileDecoder($this->td) : new BoundedFileDecoder($this->td, self::MAX_DOWNLOAD_FILE_SIZE);
         try {
-            $size = (new FileDecoder($this->td))->downloadToFile(self::inputFileLocation($location), $location->dcId, $tempPath, $expectedSize);
+            $size = $decoder->downloadToFile(self::inputFileLocation($location), $location->dcId, $tempPath, $expectedSize);
         } catch (\Throwable $e) {
             @unlink($tempPath);
+            if ($decoder instanceof BoundedFileDecoder && $decoder->limitExceeded()) {
+                throw new QueryError(400, 'Bad Request: file is too big');
+            }
             if ($this->loggingOut || $this->closing) {
                 [$code, $message] = $this->getClosingError();
                 throw new QueryError($code, $message);
