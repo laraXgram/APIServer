@@ -189,8 +189,12 @@ final class WebhookActor
      */
     public function update(): void
     {
-        if (!$this->closed) {
-            $this->events->push(['update'], 0.001);
+        if ($this->closed) {
+            return;
+        }
+        $this->tqueueEmpty = false;
+        if (!$this->events->isFull()) {
+            $this->events->push(['update']);
         }
     }
 
@@ -200,7 +204,7 @@ final class WebhookActor
     public function close(): void
     {
         if (!$this->closed) {
-            $this->events->push(['close'], 0.001);
+            $this->events->push(['close']);
         }
     }
 
@@ -210,7 +214,7 @@ final class WebhookActor
     public function hangup(): void
     {
         if (!$this->closed) {
-            $this->events->push(['hangup'], 0.001);
+            $this->events->push(['hangup']);
         }
     }
 
@@ -223,7 +227,6 @@ final class WebhookActor
             if ($event !== false) {
                 switch ($event[0]) {
                     case 'update':
-                        $this->tqueueEmpty = false;
                         break;
                     case 'close':
                         $this->call('webhookClosed', null);
