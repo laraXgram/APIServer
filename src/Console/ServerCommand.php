@@ -78,6 +78,11 @@ final class ServerCommand extends Command
     public function main(array $argv, OutputInterface $output): int
     {
         $this->binary = $argv[0] ?? $this->binary;
+        if (($argv[1] ?? '') === 'storage:clean') {
+            array_splice($argv, 1, 1);
+
+            return (new StorageCleanCommand())->main($argv, $output);
+        }
         $this->mergeApplicationDefinition();
 
         try {
@@ -357,6 +362,9 @@ final class ServerCommand extends Command
             $head = '  '.($shortcut !== null ? "-{$shortcut}, " : '    ').'--'.$name.($hasValue ? '=<arg>' : '');
             $lines[] = str_pad($head, 35).' '.$description;
         }
+
+        $lines[] = '';
+        $lines[] = "Delete downloaded files once: {$this->binary} storage:clean --help";
 
         return implode("\n", $lines)."\n";
     }
