@@ -7,7 +7,7 @@ namespace LaraGram\Server\Webhook;
 use LaraGram\Filesystem\Filesystem;
 
 /**
- * The webhooks database (webhooks_db.binlog): bot token with DC → the
+ * The webhooks database (webhooks_db.json): bot token with DC → the
  * serialized webhook settings, read back on start-up to restore webhooks.
  */
 final class WebhookDb
