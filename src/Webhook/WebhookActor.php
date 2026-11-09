@@ -529,7 +529,8 @@ final class WebhookActor
         if ($this->tqueueEmpty) {
             return;
         }
-        $loaded = count($this->updateMap);
+        // counts queues, not updates: a chat with a long backlog must not hold back the other chats
+        $loaded = count($this->queueUpdates);
         if ($loaded >= $this->maxLoadedUpdates) {
             return;
         }
