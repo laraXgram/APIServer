@@ -32,8 +32,8 @@ final class ServerCommand extends Command
         'help' => ['h', false, 'display this help text and exit'],
         'version' => [null, false, 'display version number and exit'],
         'local' => [null, false, 'allow the Bot API server to serve local requests'],
-        'api-id' => [null, true, 'application identifier for Telegram API access, which can be obtained at https://my.telegram.org (defaults to the value of the TELEGRAM_API_ID environment variable)'],
-        'api-hash' => [null, true, 'application identifier hash for Telegram API access, which can be obtained at https://my.telegram.org (defaults to the value of the TELEGRAM_API_HASH environment variable)'],
+        'api-id' => [null, true, 'application identifier for Telegram API access, which can be obtained at https://my.telegram.org (defaults to the value of the TELEGRAM_API_ID or API_ID environment variable)'],
+        'api-hash' => [null, true, 'application identifier hash for Telegram API access, which can be obtained at https://my.telegram.org (defaults to the value of the TELEGRAM_API_HASH or API_HASH environment variable)'],
         'http-port' => ['p', true, 'HTTP listening port (default is 8081)'],
         'http-stat-port' => ['s', true, 'HTTP statistics port'],
         'dir' => ['d', true, 'server working directory'],
@@ -141,9 +141,9 @@ final class ServerCommand extends Command
     {
         $parameters->localMode = (bool) $input->getOption('local');
 
-        $apiId = $input->getOption('api-id') ?? (getenv('TELEGRAM_API_ID') ?: '0');
+        $apiId = $input->getOption('api-id') ?? (getenv('TELEGRAM_API_ID') ?: getenv('API_ID') ?: '0');
         $parameters->apiId = $this->integer('api-id', $apiId);
-        $parameters->apiHash = (string) ($input->getOption('api-hash') ?? (getenv('TELEGRAM_API_HASH') ?: ''));
+        $parameters->apiHash = (string) ($input->getOption('api-hash') ?? (getenv('TELEGRAM_API_HASH') ?: getenv('API_HASH') ?: ''));
 
         $settings = [
             'http_port' => $this->integer('http-port', $input->getOption('http-port') ?? '8081'),
