@@ -9,6 +9,7 @@ use LaraGram\Server\Http\Query;
 use LaraGram\Server\Stats\BotStatActor;
 use LaraGram\Server\Stats\ServerCpuStat;
 use LaraGram\Server\Stats\Stats;
+use LaraGram\Server\Storage\StorageMonitor;
 use LaraGram\Server\Support\FloodControlFast;
 use LaraGram\Server\Support\IpAddress;
 use LaraGram\Server\Support\TdInteger;
@@ -49,6 +50,14 @@ final class ClientManager
         $this->globalFloodControl = new FloodControlFast();
         $this->stat = new BotStatActor();
         $this->parameters->webhookDb ??= new WebhookDb($this->parameters->workingDirectory.'webhooks_db.json');
+        if ($this->parameters->retentionPolicy !== null) {
+            $this->parameters->storageMonitor = new StorageMonitor(
+                $this->parameters,
+                $this->parameters->retentionPolicy,
+                $this->parameters->storageCleanupInterval,
+                $this->inTokenRange(...),
+            );
+        }
     }
 
     /**
@@ -115,6 +124,8 @@ final class ClientManager
         foreach ($this->clients as $client) {
             $client->trackConnectionState();
         }
+
+        $this->parameters->storageMonitor?->tick();
     }
 
     public function send(Query $query): void
@@ -274,6 +285,9 @@ final class ClientManager
             $lines[] = "active_requests\t".$this->stat->getActiveRequestCount();
             $lines[] = "active_network_queries\t0";
             foreach ($this->stat->asVector($now) as [$key, $value]) {
+                $lines[] = $key."\t".$value;
+            }
+            foreach ($this->parameters->storageMonitor?->getStats() ?? [] as [$key, $value]) {
                 $lines[] = $key."\t".$value;
             }
         }

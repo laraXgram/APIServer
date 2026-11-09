@@ -68,7 +68,12 @@ trait FileMethods
         [$extension, $expectedSize] = MediaConverter::fileHint($uniqueId) ?? ['', 0];
 
         $path = $this->getDownloadedFilePath($uniqueId);
-        $downloadedSize = $path !== null ? (int) @filesize($this->filesDir.$path) : 0;
+        $downloadedSize = 0;
+        if ($path !== null) {
+            $downloadedSize = (int) @filesize($this->filesDir.$path);
+            // a mount with noatime wouldn't record this use, and the storage clean-up goes by it
+            @touch($this->filesDir.$path, (int) @filemtime($this->filesDir.$path), time());
+        }
 
         // Client::do_get_file: speculative check
         if (!$this->parameters->localMode && max($expectedSize, $downloadedSize) > self::MAX_DOWNLOAD_FILE_SIZE) {
@@ -103,7 +108,13 @@ trait FileMethods
     private function getDownloadedFilePath(string $uniqueId): ?string
     {
         $path = $this->downloadedFiles()->get($uniqueId);
-        if ($path === null || !is_file($this->filesDir.$path)) {
+        if ($path === null) {
+            return null;
+        }
+        if (!is_file($this->filesDir.$path)) {
+            // deleted by the storage clean-up: download it again
+            $this->downloadedFiles()->forget($uniqueId);
+
             return null;
         }
 
@@ -179,6 +190,7 @@ trait FileMethods
             throw new QueryError(400, 'Bad Request: wrong file_id or the file is temporarily unavailable');
         }
         $this->downloadedFiles()->put($uniqueId, $path);
+        $this->parameters->storageMonitor?->recordDownload(basename($this->filesDir), $size);
 
         return $path;
     }

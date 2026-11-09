@@ -42,6 +42,15 @@ final class ServerParameters
     /** The webhooks database (SharedData::webhook_db_). */
     public ?\LaraGram\Server\Webhook\WebhookDb $webhookDb = null;
 
+    /** Deletes old downloaded files while the server runs; null when turned off. */
+    public ?\LaraGram\Server\Storage\StorageMonitor $storageMonitor = null;
+
+    /** The policy of the automatic storage clean-up; null when turned off. */
+    public ?\LaraGram\Server\Storage\RetentionPolicy $retentionPolicy = null;
+
+    /** Seconds between two scheduled storage clean-ups. */
+    public int $storageCleanupInterval = 86400;
+
     /** Largest local-minus-server clock difference reported by any bot (SharedData::unix_time_difference_). */
     public float $unixTimeDifference = -1e100;
 

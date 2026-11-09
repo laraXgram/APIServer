@@ -18,6 +18,8 @@ use LaraGram\MTProto\TL\Compiler\SchemaCompiler;
 use LaraGram\Server\Foundation\ServerParameters;
 use LaraGram\Server\Generated\MethodTable;
 use LaraGram\Server\Http\HttpServer;
+use LaraGram\Server\Storage\RetentionPolicy;
+use LaraGram\Server\Support\Units;
 
 /**
  * The server entry point. Options, defaults, environment variables and
@@ -53,6 +55,22 @@ final class ServerCommand extends Command
         'cpu-affinity' => [null, true, 'CPU affinity as 64-bit mask (defaults to all available CPUs)'],
         'main-thread-affinity' => [null, true, 'CPU affinity of the main thread as 64-bit mask (defaults to the value of the option --cpu-affinity)'],
         'proxy' => [null, true, 'HTTP proxy server for outgoing webhook requests in the format http://host:port'],
+        'no-storage-cleanup' => [null, false, 'never delete downloaded files automatically'],
+        'storage-max-files' => [null, true, 'keep at most this many downloaded files per bot (default is 40000, 0 is no limit)'],
+        'storage-max-size' => [null, true, 'keep at most this much downloaded data per bot, like 500M or 2G (default is 100M, 0 is no limit)'],
+        'storage-max-age' => [null, true, 'delete downloaded files unused for this long, like 12h or 7d (default is 23h, 0 is no limit)'],
+        'storage-age-from' => [null, true, 'measure the age from the last "access" (default) or from the "download"'],
+        'storage-immunity' => [null, true, 'never delete files downloaded within this time (default is 1h)'],
+        'storage-interval' => [null, true, 'time between two scheduled clean-ups (default is 1d)'],
+        'storage-scope' => [null, true, 'apply the limits to each "bot" (default) or to the whole "server"'],
+        'storage-types' => [null, true, 'only clean these file types, comma-separated, like videos,documents'],
+        'storage-exclude-types' => [null, true, 'never clean these file types, comma-separated'],
+        'storage-extensions' => [null, true, 'only clean these file extensions, comma-separated'],
+        'storage-exclude-extensions' => [null, true, 'never clean these file extensions, comma-separated'],
+        'storage-min-file-size' => [null, true, 'only clean files of at least this size'],
+        'storage-max-file-size' => [null, true, 'only clean files of at most this size'],
+        'storage-bots' => [null, true, 'only clean the files of these bot identifiers, comma-separated'],
+        'storage-exclude-bots' => [null, true, 'never clean the files of these bot identifiers, comma-separated'],
     ];
 
     private string $binary = 'laragram-server';
@@ -188,6 +206,8 @@ final class ServerCommand extends Command
             $parameters->webhookProxy = $proxy;
         }
 
+        $this->configureStorageCleanup($input, $parameters);
+
         if ($parameters->apiId <= 0 || $parameters->apiHash === '') {
             throw new \InvalidArgumentException('You must provide valid api-id and api-hash obtained at https://my.telegram.org');
         }
@@ -199,6 +219,39 @@ final class ServerCommand extends Command
         }
 
         return $settings;
+    }
+
+    /**
+     * The automatic clean-up matches the official server unless told otherwise.
+     *
+     * @throws \InvalidArgumentException
+     */
+    private function configureStorageCleanup(InputInterface $input, ServerParameters $parameters): void
+    {
+        if ($input->getOption('no-storage-cleanup')) {
+            return;
+        }
+
+        $values = [];
+        foreach (self::OPTIONS as $name => [, $hasValue]) {
+            if ($hasValue && str_starts_with($name, 'storage-') && $input->getOption($name) !== null) {
+                $values[substr($name, 8)] = $input->getOption($name);
+            }
+        }
+
+        try {
+            $policy = RetentionPolicy::fromOptions($values, RetentionPolicy::defaults());
+            if (isset($values['interval'])) {
+                $parameters->storageCleanupInterval = Units::parseDuration((string) $values['interval']);
+                if ($parameters->storageCleanupInterval <= 0) {
+                    throw new \InvalidArgumentException('The storage clean-up interval must be positive');
+                }
+            }
+        } catch (\InvalidArgumentException $e) {
+            throw new \InvalidArgumentException("{$this->binary}: {$e->getMessage()}");
+        }
+
+        $parameters->retentionPolicy = $policy->hasLimits() ? $policy : null;
     }
 
     /**
