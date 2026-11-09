@@ -21,7 +21,7 @@ use LaraGram\Server\Webhook\WebhookActor;
 trait HandlesWebhook
 {
     private const BOT_UPDATES_WARNING_DELAY = 30.0;
-    private const MAX_CERTIFICATE_FILE_SIZE = 3 << 10;
+    private const MAX_CERTIFICATE_FILE_SIZE = 3 << 20;
     private const MIN_PENDING_UPDATES_WARNING = 200;
 
     private ?WebhookActor $webhookActor = null;
