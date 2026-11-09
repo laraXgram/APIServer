@@ -25,6 +25,8 @@
         "ext-json": "*",
         "ext-swoole": "*",
         "ext-mbstring": "*",
+        "ext-openssl": "*",
+        "ext-zlib": "*",
         "laraxgram/core": "^4.7",
         "laraxgram/mtproto": "^0.4",
         "laraxgram/surge": "^2.0"
