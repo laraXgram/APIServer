@@ -567,6 +567,19 @@ final class WebhookActor
         if ($client->statusCode === -2 || $client->errCode === SOCKET_ETIMEDOUT) {
             return 'Read timeout expired';
         }
+        if ($client->errCode === SWOOLE_ERROR_SSL_VERIFY_FAILED) {
+            // Swoole checks the certificate after the handshake, so OpenSSL has queued no error for it
+            self::takeOpenSslErrors();
+
+            return 'SSL error {'.(OPENSSL_VERSION_NUMBER >= 0x30000000
+                ? 'error:0A000086:SSL routines::certificate verify failed'
+                : 'error:1416F086:SSL routines:tls_process_server_certificate:certificate verify failed').'}';
+        }
+        if (in_array($client->errCode, [SWOOLE_ERROR_SSL_BAD_CLIENT, SWOOLE_ERROR_SSL_BAD_PROTOCOL, SWOOLE_ERROR_SSL_EMPTY_PEER_CERTIFICATE, SWOOLE_ERROR_SSL_HANDSHAKE_FAILED], true)
+            && ($details = self::takeOpenSslErrors()) !== '') {
+            return 'SSL error '.$details;
+        }
+
         $message = $client->errMsg !== '' ? $client->errMsg : swoole_strerror($client->errCode);
 
         return $message === '' ? 'Connection closed' : $message;
