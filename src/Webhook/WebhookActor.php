@@ -55,13 +55,16 @@ final class WebhookActor
     /** @var array<int, list<int>> queue id → event ids in order */
     private array $queueUpdates = [];
 
-    /** @var array<int, float> queue id → time its first event can be sent */
-    private array $queues = [];
+    /** @var \SplMinHeap<array{0: float, 1: int}> [time the first event of a queue can be sent, queue id] */
+    private \SplMinHeap $queues;
 
     private int $uniqueQueueId = 1 << 60;
 
-    /** @var array<int, array{channel: Channel, ip_generation: int, event_id: int, busy: bool}> */
+    /** @var array<int, array{channel: Channel, ip_generation: int, event_id: int}> */
     private array $connections = [];
+
+    /** @var array<int, true> connections waiting for an update */
+    private array $readyConnections = [];
 
     private int $nextConnectionId = 1;
 
@@ -114,6 +117,7 @@ final class WebhookActor
         }
         $this->hostHeader = self::getHostHeader($this->url);
         $this->events = new Channel(1024);
+        $this->queues = new \SplMinHeap();
         $this->maxLoadedUpdates = $maxConnections * 2;
 
         $this->activeNewConnectionFlood = (new FloodControlFast())->addLimit(0.5, 10);
@@ -281,6 +285,7 @@ final class WebhookActor
         }
         self::$totalConnectionCount -= count($this->connections);
         $this->connections = [];
+        $this->readyConnections = [];
     }
 
     private function relaxWakeupAt(float $wakeupAt): void
@@ -415,7 +420,8 @@ final class WebhookActor
     {
         $id = $this->nextConnectionId++;
         $channel = new Channel(1);
-        $this->connections[$id] = ['channel' => $channel, 'ip_generation' => $this->ipGeneration, 'event_id' => 0, 'busy' => false];
+        $this->connections[$id] = ['channel' => $channel, 'ip_generation' => $this->ipGeneration, 'event_id' => 0];
+        $this->readyConnections[$id] = true;
         self::$totalConnectionCount++;
 
         $ipAddress = $this->ipAddress;
@@ -568,7 +574,7 @@ final class WebhookActor
 
             if (!isset($this->queueUpdates[$queueId])) {
                 $this->queueUpdates[$queueId] = [];
-                $this->queues[$queueId] = $now;
+                $this->queues->insert([$now, $queueId]);
             }
             $this->queueUpdates[$queueId][] = $id;
         }
@@ -601,9 +607,9 @@ final class WebhookActor
 
         array_shift($this->queueUpdates[$queueId]);
         if ($this->queueUpdates[$queueId] === []) {
-            unset($this->queueUpdates[$queueId], $this->queues[$queueId]);
+            unset($this->queueUpdates[$queueId]);
         } else {
-            $this->queues[$queueId] = $this->updateMap[$this->queueUpdates[$queueId][0]]['wakeup_at'];
+            $this->queues->insert([$this->updateMap[$this->queueUpdates[$queueId][0]]['wakeup_at'], $queueId]);
         }
 
         $this->tqueue->forget($eventId);
@@ -643,7 +649,7 @@ final class WebhookActor
         $update['delay'] = $nextDelay;
         $update['wakeup_at'] = $now + $nextEffectiveDelay;
         $update['fail_count']++;
-        $this->queues[$update['queue_id']] = $update['wakeup_at'];
+        $this->queues->insert([$update['wakeup_at'], $update['queue_id']]);
     }
 
     /**
@@ -652,33 +658,21 @@ final class WebhookActor
     private function sendUpdates(): void
     {
         while (true) {
-            $connectionId = null;
-            foreach ($this->connections as $id => $connection) {
-                if (!$connection['busy']) {
-                    $connectionId = $id;
-                    break;
-                }
-            }
-            if ($connectionId === null || $this->queues === []) {
+            if ($this->readyConnections === [] || $this->queues->isEmpty()) {
                 return;
             }
 
             $now = microtime(true);
-            $queueId = null;
-            $wakeupAt = INF;
-            foreach ($this->queues as $id => $at) {
-                if ($at < $wakeupAt) {
-                    $wakeupAt = $at;
-                    $queueId = $id;
-                }
-            }
+            [$wakeupAt, $queueId] = $this->queues->top();
             if ($wakeupAt > $now) {
                 $this->relaxWakeupAt($wakeupAt);
 
                 return;
             }
 
-            unset($this->queues[$queueId]);
+            $this->queues->extract();
+            $connectionId = array_key_last($this->readyConnections);
+            unset($this->readyConnections[$connectionId]);
             $eventId = $this->queueUpdates[$queueId][0];
             $update = &$this->updateMap[$eventId];
             $update['last_send_time'] = $now;
@@ -696,7 +690,6 @@ final class WebhookActor
             $headers['Connection'] = 'keep-alive';
             $headers['Accept-Encoding'] = 'gzip, deflate';
 
-            $this->connections[$connectionId]['busy'] = true;
             $this->connections[$connectionId]['event_id'] = $eventId;
             $this->connections[$connectionId]['channel']->push(['path' => $this->url->query === '' ? '/' : $this->url->query, 'headers' => $headers, 'body' => $body]);
         }
@@ -768,8 +761,8 @@ final class WebhookActor
             unset($this->connections[$connectionId]);
             self::$totalConnectionCount--;
         } else {
-            $this->connections[$connectionId]['busy'] = false;
             $this->connections[$connectionId]['event_id'] = 0;
+            $this->readyConnections[$connectionId] = true;
         }
 
         return $needClose;
