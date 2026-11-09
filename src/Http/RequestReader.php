@@ -9,12 +9,13 @@ use LaraGram\Server\Support\FileName;
 use LaraGram\Log\LoggerInterface;
 
 /**
- * Turns a buffered HTTP request into Query arguments and files: a port of
- * the body handling in td::HttpReader.
+ * Turns the body of an HTTP message into Query arguments and files: a port
+ * of the body handling in td::HttpReader.
  *
- * Swoole frames the request and decodes chunked transfer encoding; every
- * other step (URL decoding, form, JSON and multipart parsing, limits and
- * their error codes) follows TDLib so arguments match byte for byte.
+ * The body arrives in pieces through write(), and file parts go straight to
+ * temporary files, so an upload costs a small buffer however large it is.
+ * URL decoding, form, JSON and multipart parsing, limits and their error
+ * codes follow TDLib so arguments match byte for byte.
  */
 final class RequestReader
 {
@@ -31,6 +32,58 @@ final class RequestReader
 
     private int $totalHeadersLength = 0;
 
+    private const BODY_NONE = 0;
+    private const BODY_ARGS = 1;
+    private const BODY_MULTIPART = 2;
+    private const BODY_FILE = 3;
+
+    private const FORM_SKIP_PROLOGUE = 0;
+    private const FORM_READ_PART_HEADERS = 1;
+    private const FORM_READ_PART_VALUE = 2;
+    private const FORM_READ_FILE = 3;
+    private const FORM_CHECK_FOR_LAST_BOUNDARY = 4;
+    private const FORM_SKIP_EPILOGUE = 5;
+
+    private string $path = '';
+
+    private string $contentType = 'application/octet-stream';
+
+    private string $contentEncoding = '';
+
+    private int $bodyMode = self::BODY_NONE;
+
+    private string $buffer = '';
+
+    private string $boundary = '';
+
+    private int $formState = self::FORM_SKIP_PROLOGUE;
+
+    /** Bytes of the buffer already known not to start the searched delimiter (form_data_read_length_). */
+    private int $readLength = 0;
+
+    private string $fieldName = '';
+
+    private string $fileFieldName = '';
+
+    private string $fileName = '';
+
+    private string $fieldContentType = 'application/octet-stream';
+
+    private bool $inflating = false;
+
+    private \InflateContext|null $inflate = null;
+
+    private string $inflateHead = '';
+
+    private int $inflatedSize = 0;
+
+    /** @var resource|null */
+    private $tempHandle = null;
+
+    private string $tempPath = '';
+
+    private int $tempSize = 0;
+
     /** @var list<array{0: string, 1: string}> */
     private array $args = [];
 
@@ -44,27 +97,54 @@ final class RequestReader
     }
 
     /**
+     * Read a whole message at once (the body of a webhook response).
+     *
      * @param string $target request target: path plus optional `?query`
      * @param list<array{0: string, 1: string}> $headers lower-cased, trimmed
-     * @return array{path: string, args: list<array{0: string, 1: string}>, files: list<HttpFile>}
+     * @return array{path: string, args: list<array{0: string, 1: string}>, files: list<HttpFile>, params_size: int}
      *
      * @throws HttpReaderException
      */
     public function read(string $target, array $headers, string $body): array
     {
+        try {
+            $this->begin($target, $headers);
+            if ($body !== '') {
+                $this->openBody();
+                $this->write($body);
+            }
+
+            return $this->finish();
+        } catch (HttpReaderException $e) {
+            $this->abort();
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Start a message: the URL arguments and the headers that drive the body.
+     *
+     * @param list<array{0: string, 1: string}> $headers lower-cased, trimmed
+     *
+     * @throws HttpReaderException
+     */
+    public function begin(string $target, array $headers): void
+    {
         $this->args = [];
         $this->files = [];
         $this->totalParametersLength = 0;
         $this->totalHeadersLength = strlen($target);
+        $this->contentType = 'application/octet-stream';
+        $this->contentEncoding = '';
+        $this->bodyMode = self::BODY_NONE;
 
-        $contentType = '';
-        $contentEncoding = '';
         foreach ($headers as [$name, $value]) {
             $this->totalHeadersLength += strlen($name) + strlen($value) + 4;
             if ($name === 'content-type') {
-                $contentType = $value;
+                $this->contentType = $value;
             } elseif ($name === 'content-encoding') {
-                $contentEncoding = strtolower($value);
+                $this->contentEncoding = strtolower($value);
             }
         }
 
@@ -72,71 +152,181 @@ final class RequestReader
             throw new HttpReaderException(431, 'Request Header Fields Too Large: total headers size exceeded');
         }
 
-        $path = $this->parseUrl($target);
-
-        try {
-            if ($body !== '') {
-                $this->readBody($body, $contentType, $contentEncoding);
-            }
-        } catch (HttpReaderException $e) {
-            foreach ($this->files as $file) {
-                $file->delete();
-            }
-
-            throw $e;
-        }
-
-        return ['path' => $path, 'args' => $this->args, 'files' => $this->files];
+        $this->path = $this->parseUrl($target);
     }
 
-    private function readBody(string $body, string $contentType, string $contentEncoding): void
+    /**
+     * The message has a body: choose how it is consumed (HttpReader::do_read_next).
+     *
+     * @throws HttpReaderException
+     */
+    public function openBody(): void
     {
-        if ($contentEncoding !== '' && $contentEncoding !== 'none') {
-            if ($contentEncoding !== 'gzip' && $contentEncoding !== 'deflate') {
+        if ($this->contentEncoding !== '' && $this->contentEncoding !== 'none') {
+            if ($this->contentEncoding !== 'gzip' && $this->contentEncoding !== 'deflate') {
                 throw new HttpReaderException(415, 'Unsupported Media Type: unsupported content-encoding');
             }
+            $this->inflating = true;
+        }
 
-            $decoded = @zlib_decode($body);
-            if ($decoded === false) {
+        $lowered = strtolower($this->contentType);
+        if (str_contains($lowered, 'multipart/form-data')) {
+            $this->boundary = "\r\n--".$this->parseBoundary($this->contentType, $lowered);
+            $this->formState = self::FORM_SKIP_PROLOGUE;
+            $this->readLength = 0;
+            $this->bodyMode = self::BODY_MULTIPART;
+        } elseif (str_contains($lowered, 'application/x-www-form-urlencoded') || str_contains($lowered, 'application/json')) {
+            $this->bodyMode = self::BODY_ARGS;
+        } else {
+            // MAX_IN_MEMORY_POST_SIZE is 0 in the Bot API server: the whole body becomes the file "file"
+            $this->bodyMode = self::BODY_FILE;
+        }
+    }
+
+    /**
+     * The next piece of the body.
+     *
+     * @throws HttpReaderException
+     */
+    public function write(string $chunk): void
+    {
+        if ($this->inflating) {
+            $chunk = $this->inflateChunk($chunk);
+        }
+        if ($chunk === '') {
+            return;
+        }
+
+        switch ($this->bodyMode) {
+            case self::BODY_ARGS:
+                if (strlen($this->buffer) + strlen($chunk) > self::MAX_TOTAL_PARAMETERS_LENGTH - $this->totalParametersLength) {
+                    throw new HttpReaderException(413, 'Request Entity Too Large: too many parameters');
+                }
+                $this->buffer .= $chunk;
+                break;
+            case self::BODY_FILE:
+                $this->openTempFile('file', '');
+                $this->saveFilePart($chunk);
+                break;
+            case self::BODY_MULTIPART:
+                $this->buffer .= $chunk;
+                $this->parseMultipartFormData(false);
+                break;
+        }
+    }
+
+    /**
+     * The body ended.
+     *
+     * @return array{path: string, args: list<array{0: string, 1: string}>, files: list<HttpFile>, params_size: int}
+     *
+     * @throws HttpReaderException
+     */
+    public function finish(): array
+    {
+        if ($this->inflating && !$this->inflateFinished()) {
+            throw new HttpReaderException(400, 'Bad Request: gzip decode failed');
+        }
+
+        switch ($this->bodyMode) {
+            case self::BODY_ARGS:
+                $this->parseArgsBody();
+                break;
+            case self::BODY_FILE:
+                if ($this->tempHandle !== null) {
+                    $this->closeTempFile('file', '', $this->contentType);
+                }
+                break;
+            case self::BODY_MULTIPART:
+                if (!$this->parseMultipartFormData(true)) {
+                    throw self::unexpectedEnd();
+                }
+                break;
+        }
+
+        return ['path' => $this->path, 'args' => $this->args, 'files' => $this->files, 'params_size' => $this->totalParametersLength];
+    }
+
+    /**
+     * Drop everything saved for an unfinished message.
+     */
+    public function abort(): void
+    {
+        if ($this->tempHandle !== null) {
+            fclose($this->tempHandle);
+            $this->tempHandle = null;
+            @unlink($this->tempPath);
+            @rmdir(dirname($this->tempPath));
+        }
+        foreach ($this->files as $file) {
+            $file->delete();
+        }
+        $this->files = [];
+        $this->buffer = '';
+    }
+
+    /**
+     * GzipByteFlow in decode mode: gzip or zlib, chosen by the stream itself.
+     *
+     * @throws HttpReaderException
+     */
+    private function inflateChunk(string $chunk): string
+    {
+        if ($this->inflate === null) {
+            $this->inflateHead .= $chunk;
+            if (strlen($this->inflateHead) < 2) {
+                return '';
+            }
+            $chunk = $this->inflateHead;
+            $this->inflateHead = '';
+            $isGzip = $chunk[0] === "\x1F" && $chunk[1] === "\x8B";
+            $this->inflate = @inflate_init($isGzip ? ZLIB_ENCODING_GZIP : ZLIB_ENCODING_DEFLATE) ?: null;
+            if ($this->inflate === null) {
                 throw new HttpReaderException(400, 'Bad Request: gzip decode failed');
             }
-            $body = $decoded;
         }
 
-        if (strlen($body) >= self::MAX_CONTENT_SIZE) {
-            throw new HttpReaderException(413, 'Request Entity Too Large: content length is '.strlen($body));
+        $decoded = @inflate_add($this->inflate, $chunk, ZLIB_SYNC_FLUSH);
+        if ($decoded === false) {
+            throw new HttpReaderException(400, 'Bad Request: gzip decode failed');
+        }
+        $this->inflatedSize += strlen($decoded);
+        if ($this->inflatedSize >= self::MAX_CONTENT_SIZE) {
+            throw new HttpReaderException(413, 'Request Entity Too Large: content length is '.$this->inflatedSize);
         }
 
-        $lowered = strtolower($contentType);
+        return $decoded;
+    }
 
-        if (str_contains($lowered, 'multipart/form-data')) {
-            $this->parseMultipartFormData($body, $this->parseBoundary($contentType, $lowered));
+    private function inflateFinished(): bool
+    {
+        return $this->inflate !== null && inflate_get_status($this->inflate) === ZLIB_STREAM_END;
+    }
 
+    /**
+     * @throws HttpReaderException
+     */
+    private function parseArgsBody(): void
+    {
+        $body = $this->buffer;
+        $this->buffer = '';
+        if ($body === '') {
             return;
         }
 
-        $isForm = str_contains($lowered, 'application/x-www-form-urlencoded');
-        if ($isForm || str_contains($lowered, 'application/json')) {
-            if (strlen($body) > self::MAX_TOTAL_PARAMETERS_LENGTH - $this->totalParametersLength) {
-                throw new HttpReaderException(413, 'Request Entity Too Large: too many parameters');
+        try {
+            if (str_contains(strtolower($this->contentType), 'application/x-www-form-urlencoded')) {
+                $this->parseParameters($body);
+            } else {
+                $this->parseJsonParameters($body);
             }
-
-            try {
-                $isForm ? $this->parseParameters($body) : $this->parseJsonParameters($body);
-            } catch (HttpReaderException $e) {
-                if ($e->getCode() === 413) {
-                    throw $e;
-                }
-                // TDLib only logs malformed bodies; the arguments read so far stay.
-                $this->logger?->info($e->getMessage());
+        } catch (HttpReaderException $e) {
+            if ($e->getCode() === 413) {
+                throw $e;
             }
-
-            return;
+            // TDLib only logs malformed bodies; the arguments read so far stay.
+            $this->logger?->info($e->getMessage());
         }
-
-        // Any other content type: the whole body becomes the file "file"
-        // (MAX_IN_MEMORY_POST_SIZE is 0 in the Bot API server).
-        $this->files[] = $this->saveFile('file', '', $contentType, $body);
     }
 
     private function parseUrl(string $target): string
@@ -276,83 +466,144 @@ final class RequestReader
         return $boundary;
     }
 
-    private function parseMultipartFormData(string $body, string $boundaryValue): void
+    /**
+     * HttpReader::parse_multipart_form_data.
+     *
+     * @return bool whether the form has been read completely
+     *
+     * @throws HttpReaderException
+     */
+    private function parseMultipartFormData(bool $bodyEnded): bool
     {
-        $boundary = "\r\n--".$boundaryValue;
-        $boundaryLength = strlen($boundary);
-        $length = strlen($body);
-
-        // Skip the prologue up to the first "--boundary".
-        $found = strpos($body, substr($boundary, 2));
-        if ($found === false) {
-            throw self::unexpectedEnd();
-        }
-        $pos = $found + $boundaryLength - 2;
-
         while (true) {
-            // Part headers, terminated by an empty line.
-            $headersEnd = strpos($body, "\r\n\r\n", $pos);
-            if ($headersEnd === false) {
-                if ($this->totalHeadersLength + ($length - $pos) > self::MAX_TOTAL_HEADERS_LENGTH) {
-                    throw new HttpReaderException(431, 'Request Header Fields Too Large: total headers size exceeded');
-                }
-                throw self::unexpectedEnd();
-            }
+            switch ($this->formState) {
+                case self::FORM_SKIP_PROLOGUE:
+                    $found = $this->findDelimiter(substr($this->boundary, 2));
+                    if ($found !== null) {
+                        $this->advance($found + strlen($this->boundary) - 2);
+                        $this->formState = self::FORM_READ_PART_HEADERS;
+                        continue 2;
+                    }
+                    $this->advance($this->readLength);
 
-            $headersLength = $headersEnd - $pos;
-            $this->totalHeadersLength += $headersLength;
-            if ($this->totalHeadersLength > self::MAX_TOTAL_HEADERS_LENGTH) {
-                throw new HttpReaderException(431, 'Request Header Fields Too Large: total headers size exceeded');
-            }
-            if ($headersLength === 0) {
-                throw new HttpReaderException(400, 'Bad Request: headers in multipart/form-data are empty');
-            }
+                    return false;
 
-            // The "\r\n" after the boundary is skipped without being checked.
-            $headers = substr($body, $pos + 2, $headersLength);
-            $pos = $headersEnd + 4;
+                case self::FORM_READ_PART_HEADERS:
+                    $found = $this->findDelimiter("\r\n\r\n");
+                    if ($found === null) {
+                        if ($this->totalHeadersLength + $this->readLength > self::MAX_TOTAL_HEADERS_LENGTH) {
+                            throw new HttpReaderException(431, 'Request Header Fields Too Large: total headers size exceeded');
+                        }
 
-            [$fieldName, $hasFileName, $fileName, $fieldContentType] = $this->parsePartHeaders($headers);
+                        return false;
+                    }
 
-            $valueEnd = strpos($body, $boundary, $pos);
+                    $this->totalHeadersLength += $found;
+                    if ($this->totalHeadersLength > self::MAX_TOTAL_HEADERS_LENGTH) {
+                        throw new HttpReaderException(431, 'Request Header Fields Too Large: total headers size exceeded');
+                    }
+                    if ($found === 0) {
+                        throw new HttpReaderException(400, 'Bad Request: headers in multipart/form-data are empty');
+                    }
 
-            if ($hasFileName) {
-                if (count($this->files) === self::MAX_FILE_COUNT) {
-                    throw new HttpReaderException(413, 'Request Entity Too Large: too many files attached');
-                }
-                if ($valueEnd === false) {
-                    throw self::unexpectedEnd();
-                }
+                    // The "\r\n" after the boundary is skipped without being checked.
+                    $headers = substr($this->buffer, 2, $found);
+                    $this->advance($found + 4);
 
-                $this->files[] = $this->saveFile($fieldName, $fileName, $fieldContentType, substr($body, $pos, $valueEnd - $pos));
-            } else {
-                $valueLength = ($valueEnd === false ? $length : $valueEnd) - $pos;
-                if ($this->totalParametersLength + $valueLength > self::MAX_TOTAL_PARAMETERS_LENGTH) {
-                    throw new HttpReaderException(413, 'Request Entity Too Large: too many parameters in form data');
-                }
-                if ($valueEnd === false) {
-                    throw self::unexpectedEnd();
-                }
+                    [$this->fieldName, $hasFileName, $this->fileName, $this->fieldContentType] = $this->parsePartHeaders($headers);
 
-                $value = substr($body, $pos, $valueLength);
-                if (str_starts_with($fieldContentType, 'application/x-www-form-urlencoded')) {
-                    $this->parseParameters($value);
-                } else {
-                    $this->totalParametersLength += $valueLength;
-                    $this->args[] = [$fieldName, $value];
-                }
-            }
+                    if ($hasFileName) {
+                        if (count($this->files) === self::MAX_FILE_COUNT) {
+                            throw new HttpReaderException(413, 'Request Entity Too Large: too many files attached');
+                        }
+                        $this->fileFieldName = $this->fieldName;
+                        $this->formState = self::FORM_READ_FILE;
+                    } else {
+                        $this->formState = self::FORM_READ_PART_VALUE;
+                    }
+                    continue 2;
 
-            $pos = $valueEnd + $boundaryLength;
+                case self::FORM_READ_PART_VALUE:
+                    $found = $this->findDelimiter($this->boundary);
+                    $valueLength = $found ?? $this->readLength;
+                    if ($this->totalParametersLength + $valueLength > self::MAX_TOTAL_PARAMETERS_LENGTH) {
+                        throw new HttpReaderException(413, 'Request Entity Too Large: too many parameters in form data');
+                    }
+                    if ($found === null) {
+                        return false;
+                    }
 
-            // "--" after a boundary closes the body; anything after it is the epilogue.
-            if ($length - $pos < 2) {
-                throw self::unexpectedEnd();
-            }
-            if ($body[$pos] === '-' && $body[$pos + 1] === '-') {
-                return;
+                    $value = substr($this->buffer, 0, $found);
+                    $this->advance($found + strlen($this->boundary));
+                    if (str_starts_with($this->fieldContentType, 'application/x-www-form-urlencoded')) {
+                        // treat the value as ordinary parameters
+                        $this->parseParameters($value);
+                    } else {
+                        $this->totalParametersLength += $valueLength;
+                        $this->args[] = [$this->fieldName, $value];
+                    }
+                    $this->formState = self::FORM_CHECK_FOR_LAST_BOUNDARY;
+                    continue 2;
+
+                case self::FORM_READ_FILE:
+                    $this->openTempFile($this->fileFieldName, $this->fileName);
+                    $found = $this->findDelimiter($this->boundary);
+                    if ($found === null) {
+                        if ($this->readLength > 0) {
+                            $this->saveFilePart(substr($this->buffer, 0, $this->readLength));
+                            $this->advance($this->readLength);
+                        }
+
+                        return false;
+                    }
+
+                    if ($found > 0) {
+                        $this->saveFilePart(substr($this->buffer, 0, $found));
+                    }
+                    $this->advance($found + strlen($this->boundary));
+                    $this->closeTempFile($this->fileFieldName, $this->fileName, $this->fieldContentType);
+                    $this->formState = self::FORM_CHECK_FOR_LAST_BOUNDARY;
+                    continue 2;
+
+                case self::FORM_CHECK_FOR_LAST_BOUNDARY:
+                    if (strlen($this->buffer) < 2) {
+                        return false;
+                    }
+                    if ($this->buffer[0] === '-' && $this->buffer[1] === '-') {
+                        $this->advance(2);
+                        $this->formState = self::FORM_SKIP_EPILOGUE;
+                    } else {
+                        $this->formState = self::FORM_READ_PART_HEADERS;
+                    }
+                    continue 2;
+
+                case self::FORM_SKIP_EPILOGUE:
+                    $this->buffer = '';
+
+                    return $bodyEnded;
             }
         }
+    }
+
+    /**
+     * td::find_boundary: the position of the delimiter in the buffer; when it
+     * isn't there, readLength says how many leading bytes can't be part of it.
+     */
+    private function findDelimiter(string $delimiter): ?int
+    {
+        $position = strpos($this->buffer, $delimiter, $this->readLength);
+        if ($position !== false) {
+            return $position;
+        }
+        $this->readLength = max($this->readLength, strlen($this->buffer) - strlen($delimiter) + 1);
+
+        return null;
+    }
+
+    private function advance(int $length): void
+    {
+        $this->buffer = $length >= strlen($this->buffer) ? '' : substr($this->buffer, $length);
+        $this->readLength = 0;
     }
 
     /**
@@ -487,9 +738,15 @@ final class RequestReader
     /**
      * HttpReader::open_temp_file: the file is stored under its cleaned
      * client name in a new "tdlib-server-tmpXXXXXX" directory.
+     *
+     * @throws HttpReaderException
      */
-    private function saveFile(string $fieldName, string $fileName, string $contentType, string $content): HttpFile
+    private function openTempFile(string $fieldName, string $fileName): void
     {
+        if ($this->tempHandle !== null) {
+            return;
+        }
+
         $directory = self::makeTempDirectory($this->tempDir, 'tdlib-server-tmp');
         if ($directory !== null) {
             $cleanName = FileName::clean($fieldName === 'file' && $fileName === '' ? 'file' : $fileName);
@@ -500,18 +757,35 @@ final class RequestReader
                     continue;
                 }
                 @chmod($path, 0640);
-                $written = @fwrite($handle, $content);
-                fclose($handle);
-                if ($written === strlen($content)) {
-                    return new HttpFile($fieldName, $fileName, $contentType, strlen($content), $path);
-                }
-                @unlink($path);
-                break;
+                $this->tempHandle = $handle;
+                $this->tempPath = $path;
+                $this->tempSize = 0;
+
+                return;
             }
             @rmdir($directory);
         }
 
         throw new HttpReaderException(500, 'Internal Server Error: can\'t create temporary file');
+    }
+
+    /**
+     * @throws HttpReaderException
+     */
+    private function saveFilePart(string $part): void
+    {
+        $written = @fwrite($this->tempHandle, $part);
+        if ($written !== strlen($part)) {
+            throw new HttpReaderException(500, 'Internal Server Error: can\'t save file part');
+        }
+        $this->tempSize += $written;
+    }
+
+    private function closeTempFile(string $fieldName, string $fileName, string $contentType): void
+    {
+        fclose($this->tempHandle);
+        $this->tempHandle = null;
+        $this->files[] = new HttpFile($fieldName, $fileName, $contentType, $this->tempSize, $this->tempPath);
     }
 
     /**
