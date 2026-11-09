@@ -93,8 +93,9 @@ trait HandlesWebhook
 
         if ($this->webhookSetQuery !== null) {
             // already updating webhook; cancel the previous request
-            $this->failQueryConflict('Conflict: terminated by other setWebhook', $this->webhookSetQuery);
+            $previous = $this->webhookSetQuery;
             $this->webhookSetQuery = null;
+            $this->failQueryConflict('Conflict: terminated by other setWebhook', $previous);
         } elseif ($this->activeWebhookSetQuery !== null) {
             $query->setRetryAfterError(1);
 
@@ -384,12 +385,14 @@ trait HandlesWebhook
      */
     public function webhookVerified(string $cachedIpAddress): void
     {
-        $needSave = $this->webhookSetQuery !== null || $cachedIpAddress !== $this->webhookIpAddress;
+        // logging can switch coroutines, and another setWebhook may take over the query meanwhile
+        $query = $this->webhookSetQuery;
+        $this->webhookSetQuery = null;
+        $needSave = $query !== null || $cachedIpAddress !== $this->webhookIpAddress;
         $this->webhookIpAddress = $cachedIpAddress;
-        if ($this->webhookSetQuery !== null) {
+        if ($query !== null) {
             $this->parameters->logger->warning('Webhook verified');
-            $this->webhookSetQuery->answerQuery(true, 'Webhook was set');
-            $this->webhookSetQuery = null;
+            $query->answerQuery(true, 'Webhook was set');
         }
         if ($needSave) {
             $this->saveWebhook();
@@ -516,13 +519,12 @@ trait HandlesWebhook
      */
     private function closeWebhook(): void
     {
-        if ($this->webhookSetQuery !== null) {
-            $this->failQueryClosing($this->webhookSetQuery);
-            $this->webhookSetQuery = null;
-        }
-        if ($this->activeWebhookSetQuery !== null) {
-            $this->failQueryClosing($this->activeWebhookSetQuery);
-            $this->activeWebhookSetQuery = null;
+        foreach (['webhookSetQuery', 'activeWebhookSetQuery'] as $property) {
+            $query = $this->{$property};
+            $this->{$property} = null;
+            if ($query !== null) {
+                $this->failQueryClosing($query);
+            }
         }
         if ($this->webhookUrl !== '') {
             $this->webhookGeneration++;
