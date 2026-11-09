@@ -111,6 +111,10 @@ final class ClientManager
             $this->globalFloodControl->addLimit(60, 1000);
             $this->globalFloodControl->addLimit(60 * 60, 10000);
         }
+
+        foreach ($this->clients as $client) {
+            $client->trackConnectionState();
+        }
     }
 
     public function send(Query $query): void

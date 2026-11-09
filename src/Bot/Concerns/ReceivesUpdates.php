@@ -486,6 +486,8 @@ trait ReceivesUpdates
             return;
         }
         $this->statActor->addUpdate();
+        $this->updateLastSynchronizationErrorDate();
+        $this->lastUpdateCreationTime = microtime(true);
 
         $data = '"'.UpdateType::NAMES[$type].'":'.$json;
         $id = $this->tqueue?->push($data, $this->getUnixTime() + $timeout, $webhookQueueId) ?? 0;

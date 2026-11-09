@@ -62,6 +62,10 @@ trait HandlesWebhook
 
     private int $lastSynchronizationErrorDate = 0;
 
+    private float $disconnectionTime = 0.0;
+
+    private float $lastUpdateCreationTime = 0.0;
+
     public function processSetWebhookQuery(Query $query): void
     {
         $newUrl = $query->method() === 'setwebhook' ? $query->arg('url') : '';
@@ -183,7 +187,32 @@ trait HandlesWebhook
      */
     private function updateLastSynchronizationErrorDate(): void
     {
-        // the MTProto connection keeps its updates in sync; no synchronization errors are tracked
+        if ($this->disconnectionTime === 0.0 || !$this->wasAuthorized || $this->loggingOut || $this->closing) {
+            return;
+        }
+        $now = microtime(true);
+        if ($this->lastUpdateCreationTime > $now - 10 || $this->disconnectionTime > $now - 180) {
+            return;
+        }
+
+        $this->lastSynchronizationErrorDate = $this->getUnixTime();
+    }
+
+    /**
+     * td_api::updateConnectionState, sampled once a second.
+     */
+    public function trackConnectionState(): void
+    {
+        if (!$this->wasAuthorized || $this->td === null) {
+            return;
+        }
+
+        if ($this->td->getConnection()->isConnected()) {
+            $this->updateLastSynchronizationErrorDate();
+            $this->disconnectionTime = 0.0;
+        } elseif ($this->disconnectionTime === 0.0) {
+            $this->disconnectionTime = microtime(true);
+        }
     }
 
     private function hasActiveWebhook(): bool
