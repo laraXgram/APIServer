@@ -66,6 +66,8 @@ final class WebhookActor
     /** @var array<int, true> connections waiting for an update */
     private array $readyConnections = [];
 
+    private bool $sslContextFailed = false;
+
     private int $nextConnectionId = 1;
 
     private int $pendingConnections = 0;
@@ -182,6 +184,63 @@ final class WebhookActor
             $this->wasChecked = true;
             $this->onWebhookVerified();
         }
+
+        if ($this->url->protocol === HttpUrl::HTTPS && !$this->stopFlag) {
+            $this->createSslContext();
+        }
+    }
+
+    /**
+     * on_ssl_context_created: an unusable certificate fails setWebhook.
+     */
+    private function createSslContext(): void
+    {
+        $error = $this->certPath === '' ? null : self::getCertificateError($this->certPath);
+        if ($error !== null) {
+            $this->sslContextFailed = true;
+            $this->onWebhookError("Can't create an SSL context: {$error}");
+            $this->onError($error);
+        }
+    }
+
+    /**
+     * SSL_CTX_load_verify_locations accepts a PEM file with at least one
+     * certificate, all of them well-formed.
+     */
+    private static function getCertificateError(string $path): ?string
+    {
+        // the queue is per process: anything left in it belongs to some other connection
+        self::takeOpenSslErrors();
+
+        $content = @file_get_contents($path);
+        $blocks = [];
+        if ($content !== false) {
+            preg_match_all('/-----BEGIN (?:TRUSTED )?CERTIFICATE-----.+?-----END (?:TRUSTED )?CERTIFICATE-----/s', $content, $blocks);
+        }
+        $certificates = $blocks[0] ?? [];
+
+        $isValid = $certificates !== [];
+        foreach ($certificates as $certificate) {
+            $isValid = $isValid && @openssl_x509_read($certificate) !== false;
+        }
+        if ($isValid) {
+            return null;
+        }
+
+        return 'Failed to set custom certificate file'.self::takeOpenSslErrors();
+    }
+
+    /**
+     * create_openssl_error: "{error}" for each queued OpenSSL error.
+     */
+    private static function takeOpenSslErrors(): string
+    {
+        $details = '';
+        while (($message = openssl_error_string()) !== false) {
+            $details .= '{'.$message.'}';
+        }
+
+        return $details;
     }
 
     /**
@@ -387,7 +446,7 @@ final class WebhookActor
      */
     private function createNewConnections(): void
     {
-        if ($this->ipAddress === '') {
+        if ($this->ipAddress === '' || $this->sslContextFailed) {
             return;
         }
 
