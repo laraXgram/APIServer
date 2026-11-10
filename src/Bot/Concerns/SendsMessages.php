@@ -234,9 +234,10 @@ trait SendsMessages
      *
      * @return array{0: int, 1: array<string, mixed>|null} the chat and its td_api MessageTopic
      */
-    protected function checkMessageTopic(string $chatIdStr, int $forumTopicId, int $directMessagesTopicId, bool $allowUnknownUser = false): array
+    protected function checkMessageTopic(string $chatIdStr, int $forumTopicId, int $directMessagesTopicId, bool $allowUnknownUser = false,
+        int $access = self::ACCESS_WRITE): array
     {
-        $chatId = $this->checkChat($chatIdStr, self::ACCESS_WRITE, $allowUnknownUser && $forumTopicId === 0);
+        $chatId = $this->checkChat($chatIdStr, $access, $allowUnknownUser && $forumTopicId === 0);
         if ($forumTopicId === 0 && $directMessagesTopicId === 0) {
             return [$chatId, null];
         }
@@ -290,7 +291,9 @@ trait SendsMessages
             $reply['reply_in_chat_id'] = '';
         }
 
-        [$chatId, $topic] = $this->checkMessageTopic($chatIdStr, $forumTopicId, $directMessagesTopicId, $allowUnknownUser);
+        // replies to ephemeral messages can be sent without chat membership, for example, in placeholder chats
+        $access = $reply['reply_to_ephemeral_message_id'] > 0 ? self::ACCESS_WRITE_EPHEMERAL : self::ACCESS_WRITE;
+        [$chatId, $topic] = $this->checkMessageTopic($chatIdStr, $forumTopicId, $directMessagesTopicId, $allowUnknownUser, $access);
 
         $checked = [
             'reply_in_chat_id' => 0, 'reply_to_message_id' => 0, 'reply_to_ephemeral_message_id' => 0,
