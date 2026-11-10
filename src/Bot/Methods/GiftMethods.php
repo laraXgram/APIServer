@@ -167,6 +167,21 @@ trait GiftMethods
         $query->answerQuery(true);
     }
 
+    public function processDeleteBusinessAccountGiftQuery(Query $query): void
+    {
+        $businessConnectionId = $query->arg('business_connection_id');
+        $ownedGiftId = $query->arg('owned_gift_id');
+        $connection = $this->checkBusinessConnection($businessConnectionId);
+
+        // StarGiftManager::delete_gift
+        $inputGift = $this->getInputSavedStarGift($ownedGiftId);
+        if ($inputGift === null) {
+            throw new QueryError(400, 'Invalid gift identifier specified');
+        }
+        $this->invokeBusiness($connection, 'payments.deleteStarGift', ['stargift' => $inputGift]);
+        $query->answerQuery(true);
+    }
+
     public function processUpgradeGiftQuery(Query $query): void
     {
         $businessConnectionId = $query->arg('business_connection_id');
