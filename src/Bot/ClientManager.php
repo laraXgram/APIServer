@@ -25,8 +25,15 @@ final class ClientManager
     /** @var array<string, Client> token (with "/test" for the test DC) => client */
     private array $clients = [];
 
-    /** @var array<string, FloodControlFast> client creation limits per IP address */
+    /**
+     * Client creation limits per IP address, oldest access first; unused ones
+     * expire after an hour (td::ExpiringFlatHashMap).
+     *
+     * @var array<string, array{0: FloodControlFast, 1: float}>
+     */
     private array $floodControls = [];
+
+    private const FLOOD_CONTROL_EXPIRE_TIME = 60 * 60;
 
     private FloodControlFast $globalFloodControl;
 
@@ -170,9 +177,7 @@ final class ClientManager
             if ($ip !== '') {
                 $ip = IpAddress::normalize($ip);
                 $now = microtime(true);
-                $floodControl = $this->floodControls[$ip] ??= (new FloodControlFast())
-                    ->addLimit(60, 20)
-                    ->addLimit(60 * 60, 600);
+                $floodControl = $this->accessFloodControl($ip, $now);
 
                 $wakeupAt = $floodControl->getWakeupAt();
                 if ($wakeupAt > $now) {
@@ -384,5 +389,28 @@ final class ClientManager
         [$remainder, $modulo] = $this->tokenRange;
 
         return $userId % $modulo === $remainder;
+    }
+
+    /**
+     * ExpiringFlatHashMap::access, creating the flood control of a new IP address.
+     */
+    private function accessFloodControl(string $ip, float $now): FloodControlFast
+    {
+        // drop_expired_items: at most 10 items per access
+        for ($i = 0; $i < 10 && $this->floodControls !== []; $i++) {
+            $oldest = array_key_first($this->floodControls);
+            if ($this->floodControls[$oldest][1] + self::FLOOD_CONTROL_EXPIRE_TIME > $now) {
+                break;
+            }
+            unset($this->floodControls[$oldest]);
+        }
+
+        $floodControl = $this->floodControls[$ip][0] ?? (new FloodControlFast())
+            ->addLimit(60, 20)
+            ->addLimit(60 * 60, 600);
+        unset($this->floodControls[$ip]);
+        $this->floodControls[$ip] = [$floodControl, $now];
+
+        return $floodControl;
     }
 }
