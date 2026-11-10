@@ -21,7 +21,7 @@ final class JsonEntity
     ];
 
     /**
-     * JsonVectorEntities: bank card numbers and media timestamps are not exposed.
+     * JsonVectorEntities: media timestamps are not exposed.
      *
      * @param list<array<string, mixed>> $entities
      * @return list<array<string, mixed>>
@@ -30,7 +30,7 @@ final class JsonEntity
     {
         $result = [];
         foreach ($entities as $entity) {
-            if ($entity['type'] !== 'BankCardNumber' && $entity['type'] !== 'MediaTimestamp') {
+            if ($entity['type'] !== 'MediaTimestamp') {
                 $result[] = self::make($entity, $client);
             }
         }
