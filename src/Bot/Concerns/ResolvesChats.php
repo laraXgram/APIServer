@@ -21,6 +21,10 @@ trait ResolvesChats
     public const ACCESS_READ_MEMBERS = 1;
     public const ACCESS_EDIT = 2;
     public const ACCESS_WRITE = 3;
+    /** Ephemeral messages are read, edited and sent without supergroup membership, for example, in placeholder chats. */
+    public const ACCESS_READ_EPHEMERAL = 4;
+    public const ACCESS_EDIT_EPHEMERAL = 5;
+    public const ACCESS_WRITE_EPHEMERAL = 6;
 
     /**
      * Client::check_chat: the chat identifier, after the chat is known and accessible.
@@ -66,8 +70,10 @@ trait ResolvesChats
      */
     public function checkChatAccess(int $chatId, int $access): void
     {
-        $needWrite = $access === self::ACCESS_WRITE;
-        $needEdit = $access === self::ACCESS_EDIT || $needWrite;
+        $isEphemeral = $access === self::ACCESS_READ_EPHEMERAL || $access === self::ACCESS_EDIT_EPHEMERAL
+            || $access === self::ACCESS_WRITE_EPHEMERAL;
+        $needWrite = $access === self::ACCESS_WRITE || $access === self::ACCESS_WRITE_EPHEMERAL;
+        $needEdit = $access === self::ACCESS_EDIT || $access === self::ACCESS_EDIT_EPHEMERAL || $needWrite;
 
         switch (ChatId::type($chatId)) {
             case ChatId::TYPE_PRIVATE:
@@ -111,7 +117,7 @@ trait ResolvesChats
                 }
                 $isPublic = JsonUser::activeUsernames($channel) !== [] || !empty($channel['has_geo']);
                 $needMore = $isPublic ? $needEdit : true;
-                if (!empty($channel['left']) && $needMore) {
+                if (!empty($channel['left']) && $needMore && !$isEphemeral) {
                     throw new QueryError(403, $isSupergroup ? 'Forbidden: bot is not a member of the supergroup chat' : 'Forbidden: bot is not a member of the channel chat');
                 }
                 break;

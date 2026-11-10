@@ -45,7 +45,7 @@ trait EphemeralMethods
         $receiverUserId = self::getUserIdArg($query, 'receiver_user_id');
         $ephemeralMessageId = self::getIntegerArg($query, 'ephemeral_message_id', 0);
         $replyMarkup = $this->resolveReplyMarkupBotUsernames($this->getReplyMarkup($query));
-        $chatId = $this->checkChat($chatIdStr, self::ACCESS_EDIT);
+        $chatId = $this->checkChat($chatIdStr, self::ACCESS_EDIT_EPHEMERAL);
 
         // MessageQueryManager::edit_ephemeral_message_caption
         $tlReplyMarkup = $this->getInlineInputReplyMarkup($replyMarkup, true);
@@ -59,7 +59,7 @@ trait EphemeralMethods
         $chatIdStr = $query->arg('chat_id');
         $receiverUserId = self::getUserIdArg($query, 'receiver_user_id');
         $ephemeralMessageId = self::getIntegerArg($query, 'ephemeral_message_id', 0);
-        $chatId = $this->checkChat($chatIdStr, self::ACCESS_READ);
+        $chatId = $this->checkChat($chatIdStr, self::ACCESS_READ_EPHEMERAL);
 
         // DeleteEphemeralMessageQuery
         $this->invokeOrFail('ephemeral.deleteMessage', [
@@ -81,7 +81,7 @@ trait EphemeralMethods
         $receiverUserId = self::getUserIdArg($query, 'receiver_user_id');
         $ephemeralMessageId = self::getIntegerArg($query, 'ephemeral_message_id', 0);
         $replyMarkup = $this->resolveReplyMarkupBotUsernames($this->getReplyMarkup($query));
-        $chatId = $this->checkChat($chatIdStr, self::ACCESS_EDIT);
+        $chatId = $this->checkChat($chatIdStr, self::ACCESS_EDIT_EPHEMERAL);
 
         $tlReplyMarkup = $this->getInlineInputReplyMarkup($replyMarkup, true);
         if ($content === null) {
