@@ -167,6 +167,21 @@ trait GiftMethods
         $query->answerQuery(true);
     }
 
+    public function processGetUniqueGiftQuery(Query $query): void
+    {
+        $name = $query->arg('name');
+
+        // GetUniqueStarGiftQuery
+        $result = $this->invokeOrFail('payments.getUniqueStarGift', ['slug' => $name]);
+        $gift = JsonGift::fromServer($result['gift'] ?? [], true);
+        if ($gift === null || !$gift['is_unique']) {
+            throw new QueryError(400, 'Gift not found');
+        }
+        $this->loadStickerSetNames(self::giftStickerSets($gift));
+
+        $query->answerQuery(JsonGift::uniqueGift($gift, $this));
+    }
+
     public function processDeleteBusinessAccountGiftQuery(Query $query): void
     {
         $businessConnectionId = $query->arg('business_connection_id');

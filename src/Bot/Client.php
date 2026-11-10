@@ -644,6 +644,7 @@ final class Client
                 'STICKER_EMOJI_INVALID' => [400, 'invalid sticker emojis'],
                 'QUERY_ID_INVALID' => [400, 'query is too old and response timeout expired or query ID is invalid'],
                 'MESSAGE_DELETE_FORBIDDEN' => [400, "message can't be deleted"],
+                'STARGIFT_SLUG_INVALID' => [400, 'gift not found'],
                 'RANK_CHANGE_FORBIDDEN', 'RANK_EMOJI_NOT_ALLOWED', 'RANK_INVALID' => [
                     400,
                     ($query->method() === 'setchatmembertag' ? 'TAG' : 'CUSTOM_TITLE').substr($errorMessage, 4),
