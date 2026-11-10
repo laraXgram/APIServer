@@ -98,11 +98,16 @@ trait SendsMessages
             return $empty;
         }
 
-        return self::json(static fn (): array => [
-            'receiver_user_id' => $object->getRequiredLongField('receiver_user_id'),
+        $result = self::json(static fn (): array => [
+            'receiver_user_id' => $object->getOptionalLongField('receiver_user_id'),
             'callback_query_id' => $object->getOptionalLongField('callback_query_id'),
             'replace_callback_query_message' => $object->getOptionalBoolField('replace_callback_query_message'),
         ]);
+        if ($result['receiver_user_id'] === 0 && $result['callback_query_id'] === 0) {
+            throw new QueryError(400, 'Field "receiver_user_id" or "callback_query_id" must be specified');
+        }
+
+        return $result;
     }
 
     /**
@@ -164,14 +169,19 @@ trait SendsMessages
         $forumTopicId = self::getForumTopicId($query, 'message_thread_id');
         $businessConnectionId = $query->arg('business_connection_id');
         $ephemeral = $this->getEphemeralMessageParameters($query);
+        $protectContent = self::boolArg($query, 'protect_content');
+        $replyMarkup = $this->getReplyMarkup($query);
+        if ($ephemeral['receiver_user_id'] === 0 && $ephemeral['callback_query_id'] !== 0) {
+            $this->doReplyToCallbackQueryWithEphemeralMessage($ephemeral, $protectContent, $replyMarkup, $content, $query);
+
+            return;
+        }
         $replyParameters = $this->getReplyParameters($query);
         $disableNotification = self::boolArg($query, 'disable_notification');
-        $protectContent = self::boolArg($query, 'protect_content');
         $allowPaidBroadcast = self::boolArg($query, 'allow_paid_broadcast');
         $effectId = TdInteger::toInt64($query->arg('message_effect_id'));
         $directMessagesTopicId = TdInteger::toInt64($query->arg('direct_messages_topic_id'));
         $suggestedPost = $this->getInputSuggestedPostInfo($query);
-        $replyMarkup = $this->getReplyMarkup($query);
 
         $options = [
             'suggested_post_info' => $suggestedPost,

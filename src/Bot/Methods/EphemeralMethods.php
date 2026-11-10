@@ -18,6 +18,10 @@ use LaraGram\Server\Messages\MessageInfo;
  */
 trait EphemeralMethods
 {
+    /** is_allowed_ephemeral_message_content */
+    private const EPHEMERAL_MESSAGE_CONTENT_TYPES = ['Animation', 'Audio', 'Contact', 'Document', 'Location', 'Photo', 'RichText',
+        'Sticker', 'Text', 'Venue', 'Video', 'VideoNote', 'VoiceNote'];
+
     public function processEditEphemeralMessageTextQuery(Query $query): void
     {
         $content = $query->hasArg('rich_message')
@@ -163,8 +167,7 @@ trait EphemeralMethods
         $this->checkSendMessageTopic($chatId, $topic);
         $tlReplyMarkup = $this->getDialogReplyMarkup($replyMarkup, $chatId);
         $prepared = $this->getInputMessageContent($chatId, $content);
-        if (!in_array($prepared['type'], ['Animation', 'Audio', 'Contact', 'Document', 'Location', 'Photo', 'RichText',
-            'Sticker', 'Text', 'Venue', 'Video', 'VideoNote', 'VoiceNote'], true)) {
+        if (!in_array($prepared['type'], self::EPHEMERAL_MESSAGE_CONTENT_TYPES, true)) {
             throw new QueryError(400, 'Unallowed message content specified');
         }
 
@@ -198,6 +201,57 @@ trait EphemeralMethods
         }
 
         throw new QueryError(500, 'Request aborted');
+    }
+
+    /**
+     * Client::do_reply_to_callback_query_with_ephemeral_message: an ephemeral
+     * reply to a callback query, shown to the user who pressed the button
+     * (MessageQueryManager::edit_callback_query_message + EditCallbackQueryMessageQuery).
+     *
+     * @param array<string, mixed> $ephemeral
+     * @param array<string, mixed>|null $replyMarkup td_api ReplyMarkup
+     * @param array<string, mixed> $content td_api InputMessageContent
+     */
+    protected function doReplyToCallbackQueryWithEphemeralMessage(array $ephemeral, bool $protectContent, ?array $replyMarkup,
+        array $content, Query $query): void
+    {
+        if ($query->arg('business_connection_id') !== '') {
+            throw new QueryError(400, 'Business messages can\'t be sent as ephemeral replies to callback queries');
+        }
+        $replyMarkup = $this->resolveReplyMarkupBotUsernames($replyMarkup);
+
+        $tlReplyMarkup = $this->getInlineInputReplyMarkup($replyMarkup, true);
+        // the chat is unknown, so the content is uploaded to the chat with the bot itself
+        $myId = $this->getMyId();
+        $prepared = $this->getInputMessageContent($myId, $content);
+        if (!in_array($prepared['type'], self::EPHEMERAL_MESSAGE_CONTENT_TYPES, true)) {
+            throw new QueryError(400, 'Unallowed message content specified');
+        }
+
+        $params = self::tl('ephemeral.sendMessage', [
+            'invert_media' => $prepared['invert_media'],
+            'anchor' => $ephemeral['replace_callback_query_message'],
+            'noforwards' => $protectContent,
+            'receiver_id' => ['_' => 'inputUserEmpty'],
+            'query_id' => $ephemeral['callback_query_id'],
+            'message' => $prepared['text']->text,
+            'entities' => $this->inputEntitiesOrNull($prepared['text']),
+            'media' => $prepared['media'],
+            'reply_markup' => $tlReplyMarkup,
+            'rich_message' => $prepared['rich_message'] ?? null,
+            'random_id' => self::randomId(),
+        ]);
+        $result = $this->invokeSend('ephemeral.sendMessage', $params, $myId, $prepared['type']);
+
+        $messages = array_values(array_filter($this->updatesOf($result),
+            static fn (array $update): bool => ($update['_'] ?? '') === 'updateNewEphemeralMessage'));
+        $message = count($messages) === 1 ? $this->convertEphemeralMessage($messages[0]['message'] ?? []) : null;
+        if ($message === null) {
+            throw new QueryError(500, 'Receive invalid response');
+        }
+        $message->isContentChanged = false;
+
+        $query->answerQuery(\LaraGram\Server\Objects\JsonMessage::make($message, true, $this));
     }
 
     /**
