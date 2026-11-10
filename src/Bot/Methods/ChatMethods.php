@@ -11,6 +11,7 @@ use LaraGram\Server\Http\Query;
 use LaraGram\Server\Objects\ChatId;
 use LaraGram\Server\Objects\ChatPermissions;
 use LaraGram\Server\Objects\JsonChatFull;
+use LaraGram\Server\Objects\JsonTonWallet;
 use LaraGram\Server\Objects\JsonUser;
 use LaraGram\Server\Support\TdInteger;
 use LaraGram\Server\Support\TdJson;
@@ -47,6 +48,13 @@ trait ChatMethods
             }
             $pinnedMessageId = 0;
         }
+
+        // TdOnGetChatPinnedMessageCallback: the sticker sets of gifts on the TON wallet card
+        $sets = [];
+        foreach (JsonTonWallet::cardGifts(JsonTonWallet::cardFromServer($full['wallet_card'] ?? null)) as $gift) {
+            $sets = array_merge($sets, self::giftStickerSets($gift));
+        }
+        $this->loadStickerSetNames($sets);
 
         $query->answerQuery(JsonChatFull::make($chatId, $this, $full, $pinnedMessageId));
     }

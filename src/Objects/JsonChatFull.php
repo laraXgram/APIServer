@@ -105,6 +105,9 @@ final class JsonChatFull
                 if (isset($full['saved_music']) && ($audio = MediaConverter::document($full['saved_music'], false, false)) !== null) {
                     $object['first_profile_audio'] = JsonMedia::audio($audio);
                 }
+                if (($card = JsonTonWallet::cardFromServer($full['wallet_card'] ?? null)) !== null) {
+                    $object['ton_wallet_card'] = JsonTonWallet::card($card, $client);
+                }
                 if (!empty($full['send_paid_messages_stars'])) {
                     $object['paid_message_star_count'] = (int) $full['send_paid_messages_stars'];
                 }
