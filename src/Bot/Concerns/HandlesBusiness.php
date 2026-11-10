@@ -536,23 +536,15 @@ trait HandlesBusiness
         }
         $pollOptionId = TextFormatting::cleanInputString($replyParameters['poll_option_id']) ?? '';
         $checklistTaskId = max(0, (int) $replyParameters['checklist_task_id']);
-        $quote = $this->getMessageQuote($replyParameters['quote'], (int) $replyParameters['quote_position']);
+        $quote = $this->getMessageQuote($replyParameters['quote'], (int) $replyParameters['quote_position'],
+            $replyParameters['quote_rich_texts'] ?? []);
 
         $result = self::tl('inputReplyToMessage', [
             'reply_to_msg_id' => $messageId,
             'todo_item_id' => $checklistTaskId !== 0 ? $checklistTaskId : null,
             'poll_option' => $pollOptionId !== '' ? $pollOptionId : null,
         ]);
-        if ($quote !== null) {
-            $result['quote_text'] = $quote['text']->text;
-            $entities = $this->inputEntitiesOrNull($quote['text']);
-            if ($entities !== null) {
-                $result['quote_entities'] = $entities;
-            }
-            if ($quote['position'] !== 0) {
-                $result['quote_offset'] = $quote['position'];
-            }
-        }
+        $this->updateInputReplyToMessageQuote($result, $quote);
 
         return $result;
     }

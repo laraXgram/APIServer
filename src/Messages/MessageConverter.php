@@ -258,15 +258,18 @@ final class MessageConverter
         $origin = isset($reply['reply_from']) ? self::forwardOrigin($reply['reply_from'], $this->client) : null;
         $messageId = (int) ($reply['reply_to_msg_id'] ?? 0);
 
-        if ($messageId === 0 && $origin === null && !isset($reply['quote_text'])) {
+        if ($messageId === 0 && $origin === null && !isset($reply['quote_text']) && !isset($reply['quote_rich'])) {
             return;
         }
 
+        // MessageQuote(td, messageReplyHeader): a quote of a rich message has rich texts
         $quote = null;
-        if (isset($reply['quote_text'])) {
+        $quoteRichTexts = \LaraGram\Server\Objects\JsonRichMessage::quoteRichTexts($reply['quote_rich'] ?? []);
+        if ((string) ($reply['quote_text'] ?? '') !== '' || $quoteRichTexts !== []) {
             $quote = [
-                'text' => FormattedText::fromServer((string) $reply['quote_text'], $reply['quote_entities'] ?? []),
-                'position' => (int) ($reply['quote_offset'] ?? 0),
+                'text' => FormattedText::fromServer((string) ($reply['quote_text'] ?? ''), $reply['quote_entities'] ?? []),
+                'rich_texts' => $quoteRichTexts,
+                'position' => max(0, (int) ($reply['quote_offset'] ?? 0)),
                 'is_manual' => !empty($reply['quote']),
             ];
         }
