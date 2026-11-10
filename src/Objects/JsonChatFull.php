@@ -108,6 +108,9 @@ final class JsonChatFull
                 if (($card = JsonTonWallet::cardFromServer($full['wallet_card'] ?? null)) !== null) {
                     $object['ton_wallet_card'] = JsonTonWallet::card($card, $client);
                 }
+                if (($theme = JsonChatShareTheme::fromServer($full['share_theme'] ?? null)) !== null) {
+                    $object['share_theme'] = JsonChatShareTheme::make($theme, $client);
+                }
                 if (!empty($full['send_paid_messages_stars'])) {
                     $object['paid_message_star_count'] = (int) $full['send_paid_messages_stars'];
                 }
@@ -195,6 +198,9 @@ final class JsonChatFull
                 }
                 if (($full['location']['_'] ?? '') === 'channelLocation' && ($location = MessageConverter::location($full['location']['geo_point'] ?? [])) !== null) {
                     $object['location'] = ['location' => JsonMedia::location($location), 'address' => (string) $full['location']['address']];
+                }
+                if (($theme = JsonChatShareTheme::fromServer($full['share_theme'] ?? null)) !== null) {
+                    $object['share_theme'] = JsonChatShareTheme::make($theme, $client);
                 }
                 if (!empty($full['paid_media_allowed']) && !$isSupergroup) {
                     $object['can_send_paid_media'] = true;

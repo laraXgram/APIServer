@@ -11,6 +11,7 @@ use LaraGram\Server\Http\Query;
 use LaraGram\Server\Objects\ChatId;
 use LaraGram\Server\Objects\ChatPermissions;
 use LaraGram\Server\Objects\JsonChatFull;
+use LaraGram\Server\Objects\JsonChatShareTheme;
 use LaraGram\Server\Objects\JsonTonWallet;
 use LaraGram\Server\Objects\JsonUser;
 use LaraGram\Server\Support\TdInteger;
@@ -49,14 +50,50 @@ trait ChatMethods
             $pinnedMessageId = 0;
         }
 
-        // TdOnGetChatPinnedMessageCallback: the sticker sets of gifts on the TON wallet card
+        // TdOnGetChatPinnedMessageCallback: the sticker sets of gifts on the TON wallet card and the share theme
+        $gifts = array_merge(
+            JsonTonWallet::cardGifts(JsonTonWallet::cardFromServer($full['wallet_card'] ?? null)),
+            JsonChatShareTheme::gifts(JsonChatShareTheme::fromServer($full['share_theme'] ?? null)),
+        );
         $sets = [];
-        foreach (JsonTonWallet::cardGifts(JsonTonWallet::cardFromServer($full['wallet_card'] ?? null)) as $gift) {
+        foreach ($gifts as $gift) {
             $sets = array_merge($sets, self::giftStickerSets($gift));
         }
         $this->loadStickerSetNames($sets);
 
         $query->answerQuery(JsonChatFull::make($chatId, $this, $full, $pinnedMessageId));
+    }
+
+    /** @var list<array<string, mixed>>|null TL shareThemeBackdropOption list (ThemeManager::share_theme_backdrops_) */
+    private ?array $shareThemeBackdrops = null;
+
+    private int $shareThemeBackdropsHash = 0;
+
+    private float $nextShareThemeBackdropsReloadTime = 0.0;
+
+    public function processGetChatShareThemeBackdropsQuery(Query $query): void
+    {
+        // ThemeManager::get_profile_share_theme_backdrops: loaded backdrops are reloaded once an hour
+        if ($this->shareThemeBackdrops === null || microtime(true) >= $this->nextShareThemeBackdropsReloadTime) {
+            try {
+                $result = $this->invoke('messages.getShareThemeBackdrops', ['hash' => $this->shareThemeBackdropsHash]);
+                if (($result['_'] ?? '') === 'shareThemeBackdrops') {
+                    $this->shareThemeBackdrops = $result['backdrops'] ?? [];
+                    $this->shareThemeBackdropsHash = (int) ($result['hash'] ?? 0);
+                }
+                $this->shareThemeBackdrops ??= [];
+                $this->nextShareThemeBackdropsReloadTime = microtime(true) + 3600;
+            } catch (\Throwable $e) {
+                if ($this->shareThemeBackdrops === null) {
+                    throw QueryError::fromThrowable($e);
+                }
+            }
+        }
+
+        $query->answerQuery(['backdrops' => array_map(
+            static fn (array $backdrop): array => JsonChatShareTheme::backdrop($backdrop),
+            $this->shareThemeBackdrops,
+        )]);
     }
 
     /**
