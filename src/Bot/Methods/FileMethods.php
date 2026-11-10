@@ -93,7 +93,7 @@ trait FileMethods
         }
         if ($this->parameters->localMode) {
             $fullPath = $this->filesDir.$path;
-            $object['file_path'] = mb_check_encoding($fullPath, 'UTF-8') ? $fullPath : new JsonRawString($fullPath);
+            $object['file_path'] = JsonRawString::bytes($fullPath);
         } elseif ($downloadedSize <= self::MAX_DOWNLOAD_FILE_SIZE) {
             $object['file_path'] = $path;
         }

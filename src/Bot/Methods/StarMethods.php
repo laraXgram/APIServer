@@ -458,7 +458,7 @@ trait StarMethods
     private function storeInvoicePayload(array &$object, string $payload): void
     {
         if ($payload !== '') {
-            $object['invoice_payload'] = mb_check_encoding($payload, 'UTF-8') ? $payload : new JsonRawString($payload);
+            $object['invoice_payload'] = JsonRawString::bytes($payload);
         }
     }
 

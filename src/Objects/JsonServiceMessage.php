@@ -6,6 +6,7 @@ namespace LaraGram\Server\Objects;
 
 use LaraGram\Server\Bot\Client;
 use LaraGram\Server\Entities\FormattedText;
+use LaraGram\Server\Http\JsonRawString;
 use LaraGram\Server\Messages\MessageInfo;
 
 /**
@@ -117,7 +118,7 @@ final class JsonServiceMessage
                 $payment = [
                     'currency' => $content['currency'],
                     'total_amount' => $content['total_amount'],
-                    'invoice_payload' => $content['invoice_payload'],
+                    'invoice_payload' => JsonRawString::bytes($content['invoice_payload']),
                 ];
                 if ($content['shipping_option_id'] !== '') {
                     $payment['shipping_option_id'] = $content['shipping_option_id'];
@@ -236,7 +237,7 @@ final class JsonServiceMessage
                 $refunded = [
                     'currency' => $content['currency'],
                     'total_amount' => $content['total_amount'],
-                    'invoice_payload' => $content['invoice_payload'],
+                    'invoice_payload' => JsonRawString::bytes($content['invoice_payload']),
                     'telegram_payment_charge_id' => $content['telegram_payment_charge_id'],
                 ];
                 if ($content['provider_payment_charge_id'] !== '') {

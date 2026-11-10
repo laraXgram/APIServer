@@ -17,6 +17,14 @@ final class JsonRawString implements \JsonSerializable
     {
     }
 
+    /**
+     * Client::json_store_bytes: the bytes as a string, or as they are when they aren't valid UTF-8.
+     */
+    public static function bytes(string $value): string|self
+    {
+        return mb_check_encoding($value, 'UTF-8') ? $value : new self($value);
+    }
+
     public function jsonSerialize(): string
     {
         return self::MARKER.base64_encode($this->value);
