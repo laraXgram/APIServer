@@ -347,6 +347,9 @@ final class JsonServiceMessage
                 break;
             case 'messageTonConnectRequest':
                 break;
+            case 'messageUnpaidMessagesAllowedByLink':
+                $object['paid_messages_waived'] = new \stdClass();
+                break;
         }
     }
 
