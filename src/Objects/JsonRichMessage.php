@@ -71,6 +71,82 @@ final class JsonRichMessage
     }
 
     /**
+     * MessageQuote::get_rich_texts_object: the rich texts of a quote from a rich message.
+     *
+     * @param list<array<string, mixed>> $texts TL RichText, already cleaned by quoteRichTexts()
+     * @return list<mixed>
+     */
+    public static function quoteTexts(array $texts, Client $client): array
+    {
+        $converter = new self($client);
+
+        return array_map(static fn (array $text): mixed => $converter->text($text), $texts);
+    }
+
+    /**
+     * get_quote_rich_texts: RichText::remove_unallowed_quote_entities of each
+     * text; empty texts are dropped.
+     *
+     * @param list<array<string, mixed>> $texts TL RichText
+     * @return list<array<string, mixed>>
+     */
+    public static function quoteRichTexts(array $texts): array
+    {
+        $result = [];
+        foreach ($texts as $text) {
+            $text = self::quoteFragment($text);
+            if ($text !== null) {
+                $result[] = $text;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * RichText::remove_unallowed_quote_entities, which for a whole text is
+     * RichText::get_quote_fragment too: formatting that can't be quoted is
+     * replaced with its text, icons are removed; null for an empty text.
+     *
+     * @param array<string, mixed> $text TL RichText
+     * @return array<string, mixed>|null
+     */
+    public static function quoteFragment(array $text): ?array
+    {
+        switch ($text['_'] ?? '') {
+            case 'textEmpty':
+                return null;
+            case 'textPlain':
+                return (string) $text['text'] === '' ? null : $text;
+            case 'textMath':
+            case 'textCustomEmoji':
+                return $text;
+            case 'textImage':
+                return null;
+            case 'textConcat':
+                $texts = self::quoteRichTexts($text['texts'] ?? []);
+
+                return $texts === [] ? null : ['_' => 'textConcat', 'texts' => $texts];
+            case 'textFixed': case 'textUrl': case 'textEmail': case 'textMarked': case 'textPhone': case 'textAnchor':
+            case 'textMention': case 'textHashtag': case 'textCashtag': case 'textBotCommand': case 'textAutoUrl':
+            case 'textAutoEmail': case 'textAutoPhone': case 'textBankCard': case 'textMentionName': case 'textButton':
+            case 'textTonAddress': case 'textDiff':
+                return self::quoteFragment($text['text'] ?? ['_' => 'textEmpty']);
+            case 'textBold': case 'textItalic': case 'textUnderline': case 'textStrike': case 'textSubscript':
+            case 'textSuperscript': case 'textSpoiler': case 'textDate':
+                $inner = self::quoteFragment($text['text'] ?? ['_' => 'textEmpty']);
+                if ($inner === null) {
+                    return null;
+                }
+                $text['text'] = $inner;
+
+                return $text;
+        }
+
+        return null;
+    }
+
+    /**
      * @param list<array<string, mixed>> $blocks TL PageBlock
      * @return list<array<string, mixed>>
      */
@@ -534,6 +610,8 @@ final class JsonRichMessage
                 return ['type' => 'phone_number', 'text' => $this->text($text['text']), 'phone_number' => self::fullText($text['text'])];
             case 'textBankCard':
                 return ['type' => 'bank_card_number', 'text' => $this->text($text['text']), 'bank_card_number' => self::fullText($text['text'])];
+            case 'textTonAddress':
+                return ['type' => 'ton_address', 'text' => $this->text($text['text']), 'address' => self::fullText($text['text'])];
             case 'textMentionName':
                 $userId = (int) $text['user_id'];
 
@@ -610,8 +688,6 @@ final class JsonRichMessage
 
         return $format;
     }
-            case 'textTonAddress':
-                return ['type' => 'ton_address', 'text' => $this->text($text['text']), 'address' => self::fullText($text['text'])];
 
     /**
      * RichText::get_full_text.

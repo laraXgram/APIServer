@@ -178,7 +178,8 @@ trait ForwardsMessages
         }
         $replyTo = $copyOption['reply_to'];
         if ($replyTo !== null && $replyTo['reply_to_message_id'] > 0) {
-            if (($topic['_'] ?? '') !== 'messageTopicForum' || $replyTo['quote'] !== null || $replyTo['checklist_task_id'] !== 0
+            if (($topic['_'] ?? '') !== 'messageTopicForum' || $replyTo['quote'] !== null || ($replyTo['quote_rich_texts'] ?? []) !== []
+                || $replyTo['checklist_task_id'] !== 0
                 || $replyTo['poll_option_id'] !== '' || $replyTo['reply_in_chat_id'] !== 0
                 || $replyTo['reply_to_message_id'] !== $this->getImplicitReplyToMessageId($chatId, $topic)) {
                 return false;

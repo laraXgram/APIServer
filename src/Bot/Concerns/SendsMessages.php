@@ -316,6 +316,7 @@ trait SendsMessages
             $checked['reply_to_message_id'] = $messageId;
             $checked['reply_in_chat_id'] = $replyInChatId;
             $checked['quote'] = $reply['quote'];
+            $checked['quote_rich_texts'] = $reply['quote_rich_texts'] ?? [];
             $checked['quote_position'] = $reply['quote_position'];
             $checked['checklist_task_id'] = $reply['checklist_task_id'];
             $checked['poll_option_id'] = $reply['poll_option_id'];
@@ -859,7 +860,7 @@ trait SendsMessages
                 if (($message->content['_'] ?? '') !== 'messagePoll') {
                     $pollOptionId = '';
                 }
-                $quote = $this->getMessageQuote($replyTo['quote'], $replyTo['quote_position']);
+                $quote = $this->getMessageQuote($replyTo['quote'], $replyTo['quote_position'], $replyTo['quote_rich_texts'] ?? []);
             } else {
                 $replyChatId = 0;
             }
@@ -889,18 +890,34 @@ trait SendsMessages
             'poll_option' => $pollOptionId !== '' ? $pollOptionId : null,
         ]);
 
-        if ($quote !== null) {
-            $result['quote_text'] = $quote['text']->text;
-            $entities = $this->inputEntitiesOrNull($quote['text']);
-            if ($entities !== null) {
-                $result['quote_entities'] = $entities;
-            }
-            if ($quote['position'] !== 0) {
-                $result['quote_offset'] = $quote['position'];
-            }
-        }
+        $this->updateInputReplyToMessageQuote($result, $quote);
 
         return $result;
+    }
+
+    /**
+     * MessageQuote::update_input_reply_to_message.
+     *
+     * @param array<string, mixed> $inputReplyTo TL inputReplyToMessage
+     * @param array{text: FormattedText, rich_texts: list<array<string, mixed>>, position: int}|null $quote
+     */
+    protected function updateInputReplyToMessageQuote(array &$inputReplyTo, ?array $quote): void
+    {
+        if ($quote === null) {
+            return;
+        }
+        if ($quote['rich_texts'] === []) {
+            $inputReplyTo['quote_text'] = $quote['text']->text;
+            $entities = $this->inputEntitiesOrNull($quote['text']);
+            if ($entities !== null) {
+                $inputReplyTo['quote_entities'] = $entities;
+            }
+        } else {
+            $inputReplyTo['quote_rich'] = $quote['rich_texts'];
+        }
+        if ($quote['position'] !== 0) {
+            $inputReplyTo['quote_offset'] = $quote['position'];
+        }
     }
 
     /**
@@ -924,12 +941,40 @@ trait SendsMessages
     }
 
     /**
-     * MessageQuote(td, td_api::inputTextQuote): null for an empty quote.
+     * MessageQuote(td, td_api::inputTextQuote): null for an empty quote. A
+     * quote of a rich message is given by its rich texts, each reduced to
+     * what quotes support (RichText::get_quote_fragment).
      *
-     * @return array{text: FormattedText, position: int}|null
+     * @param list<array<string, mixed>|null> $richTexts td_api RichText
+     * @return array{text: FormattedText, rich_texts: list<array<string, mixed>>, position: int}|null
      */
-    protected function getMessageQuote(?FormattedText $quote, int $position): ?array
+    protected function getMessageQuote(?FormattedText $quote, int $position, array $richTexts = []): ?array
     {
+        if ($richTexts !== []) {
+            $result = [];
+            foreach ($richTexts as $richText) {
+                try {
+                    $unused = [];
+                    $fragment = \LaraGram\Server\Objects\JsonRichMessage::quoteFragment($this->getInputRichText($richText, $unused));
+                } catch (QueryError) {
+                    // an invalid rich text makes the whole quote empty
+                    return null;
+                }
+                if ($fragment !== null) {
+                    $result[] = $fragment;
+                }
+            }
+            if ($result === []) {
+                return null;
+            }
+
+            return [
+                'text' => new FormattedText(),
+                'rich_texts' => $result,
+                'position' => $position < 0 || $position > 1000000 ? 0 : $position,
+            ];
+        }
+
         if ($quote === null) {
             return null;
         }
@@ -948,7 +993,7 @@ trait SendsMessages
             $position = 0;
         }
 
-        return ['text' => new FormattedText($text, $entities), 'position' => $position];
+        return ['text' => new FormattedText($text, $entities), 'rich_texts' => [], 'position' => $position];
     }
 
     /**
@@ -1377,12 +1422,15 @@ trait SendsMessages
             if ($replyTo['reply_in_chat_id'] !== 0 && $replyTo['reply_in_chat_id'] !== $chatId) {
                 $header['reply_to_peer_id'] = self::peerOf($replyTo['reply_in_chat_id']);
             }
-            $quote = $this->getMessageQuote($replyTo['quote'], $replyTo['quote_position']);
+            $quote = $this->getMessageQuote($replyTo['quote'], $replyTo['quote_position'], $replyTo['quote_rich_texts'] ?? []);
             if ($quote !== null) {
                 $header['quote'] = true;
                 $header['quote_text'] = $quote['text']->text;
                 $header['quote_entities'] = $quote['text']->inputEntities(fn (int $userId): array => ['_' => 'inputUser', 'user_id' => $userId]);
                 $header['quote_offset'] = $quote['position'];
+                if ($quote['rich_texts'] !== []) {
+                    $header['quote_rich'] = $quote['rich_texts'];
+                }
             }
         } elseif (isset($header['reply_to_top_id'])) {
             $header['reply_to_msg_id'] = $header['reply_to_top_id'];

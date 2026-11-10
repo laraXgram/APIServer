@@ -103,6 +103,9 @@ final class JsonMessage
             if ($reply['quote']['text']->entities !== []) {
                 $quote['entities'] = JsonEntity::vector($reply['quote']['text']->entities, $client);
             }
+            if (($reply['quote']['rich_texts'] ?? []) !== []) {
+                $quote['rich_texts'] = JsonRichMessage::quoteTexts($reply['quote']['rich_texts'], $client);
+            }
             $quote['position'] = $reply['quote']['position'];
             if ($reply['quote']['is_manual']) {
                 $quote['is_manual'] = true;

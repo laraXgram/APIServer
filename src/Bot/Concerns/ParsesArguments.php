@@ -417,7 +417,7 @@ trait ParsesArguments
     {
         $empty = [
             'reply_in_chat_id' => '', 'reply_to_message_id' => 0, 'reply_to_ephemeral_message_id' => 0,
-            'allow_sending_without_reply' => false, 'quote' => null, 'quote_position' => 0,
+            'allow_sending_without_reply' => false, 'quote' => null, 'quote_rich_texts' => [], 'quote_position' => 0,
             'checklist_task_id' => 0, 'poll_option_id' => '',
         ];
 
@@ -455,6 +455,19 @@ trait ParsesArguments
             $quoteText = $object->getOptionalStringField('quote');
             $parseMode = $object->getOptionalStringField('quote_parse_mode');
             $quote = $this->getFormattedText($quoteText, $parseMode, $object->extractField('quote_entities'));
+            $quoteRichTexts = [];
+            $inputQuoteRichTexts = $object->extractField('quote_rich_texts');
+            if (!$inputQuoteRichTexts->isNull()) {
+                if (!$inputQuoteRichTexts->isArray()) {
+                    throw new QueryError(400, 'Field "quote_rich_texts" must be an Array');
+                }
+                foreach ($inputQuoteRichTexts->array() as $inputRichText) {
+                    if ($inputRichText->isNull()) {
+                        throw new QueryError(400, 'Field "quote_rich_texts" must not contain null');
+                    }
+                    $quoteRichTexts[] = $this->richTextFromJson($inputRichText);
+                }
+            }
             $quotePosition = $object->getOptionalIntField('quote_position');
             $checklistTaskId = $object->getOptionalIntField('checklist_task_id');
             $pollOptionId = $object->getOptionalStringField('poll_option_id');
@@ -466,6 +479,7 @@ trait ParsesArguments
                 'reply_to_ephemeral_message_id' => max($ephemeralMessageId, 0),
                 'allow_sending_without_reply' => $allowSendingWithoutReply,
                 'quote' => $quote,
+                'quote_rich_texts' => $quoteRichTexts,
                 'quote_position' => $quotePosition,
                 'checklist_task_id' => $checklistTaskId,
                 'poll_option_id' => $pollOptionId,
