@@ -72,7 +72,7 @@ final class HttpServer
 
         $server->on('workerStart', function (Server $server): void {
             $this->clientManager = new ClientManager($this->parameters, $this->settings['token_range']);
-            $this->connection = new HttpConnection($this->clientManager);
+            $this->connection = new HttpConnection($this->clientManager, $this->parameters->streamFiles);
             \Swoole\Coroutine::create(fn () => $this->clientManager?->restoreWebhooks());
 
             Timer::tick(1000, function (): void {
@@ -100,6 +100,10 @@ final class HttpServer
                 $isStat
                     ? fn (array $request, HttpInboundConnection $connection) => $this->connection->handleStat($request, $connection)
                     : fn (array $request, HttpInboundConnection $connection) => $this->connection->handle($request, $connection),
+                // without file storage, uploads go to the bot while the request is read
+                !$isStat && !$this->parameters->fileStorage
+                    ? fn (string $path, string $ip) => $this->clientManager?->uploadClient($path, $ip)
+                    : null,
             );
         });
 

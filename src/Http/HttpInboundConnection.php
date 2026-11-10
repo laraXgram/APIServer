@@ -44,11 +44,12 @@ final class HttpInboundConnection
         string $tempDirectory,
         private readonly ?LoggerInterface $logger,
         private readonly \Closure $handler,
+        ?\Closure $uploadClient = null,
     ) {
         $this->inbox = new \SplQueue();
         $this->parser = new HttpMessageParser($tempDirectory, $logger, function (): void {
             $this->server->send($this->fd, "HTTP/1.1 100 Continue\r\n\r\n");
-        });
+        }, $uploadClient === null ? null : fn (string $path) => $uploadClient($path, $this->remoteAddress));
     }
 
     public function receive(string $data): void
@@ -102,6 +103,28 @@ final class HttpInboundConnection
             return;
         }
         $this->server->send($this->fd, $response);
+        if (!$keepAlive) {
+            $this->close();
+        }
+    }
+
+    /**
+     * Write a part of a response that is sent in pieces; false once the peer is gone.
+     */
+    public function writePart(string $data): bool
+    {
+        if ($this->closed) {
+            return false;
+        }
+
+        return $this->server->send($this->fd, $data) !== false && !$this->closed;
+    }
+
+    /**
+     * A response sent in pieces ended.
+     */
+    public function endResponse(bool $keepAlive): void
+    {
         if (!$keepAlive) {
             $this->close();
         }

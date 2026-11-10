@@ -48,6 +48,15 @@ final class ServerParameters
     /** The policy of the automatic storage clean-up; null when turned off. */
     public ?\LaraGram\Server\Storage\RetentionPolicy $retentionPolicy = null;
 
+    /** Whether downloaded and uploaded files are written to disk (--no-file-storage turns it off). */
+    public bool $fileStorage = true;
+
+    /** Whether the server answers /file/bot<token>/<file_path> itself, streaming files (--stream-files). */
+    public bool $streamFiles = false;
+
+    /** How many 1 MB chunks of a streamed file are fetched ahead of the one being sent. */
+    public int $streamReadAhead = 4;
+
     /** Seconds between two scheduled storage clean-ups. */
     public int $storageCleanupInterval = 86400;
 

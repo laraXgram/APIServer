@@ -80,6 +80,18 @@ trait FileMethods
             throw new QueryError(400, 'Bad Request: file is too big');
         }
 
+        if ($path === null && $this->parameters->streamFiles) {
+            // the file is streamed from Telegram when its path is requested, so it isn't downloaded now
+            $object = ['file_id' => $location->toFileId(), 'file_unique_id' => $uniqueId];
+            if ($expectedSize !== 0) {
+                $object['file_size'] = $expectedSize;
+            }
+            $object['file_path'] = $this->streamedFilePath($location, $extension, $expectedSize);
+            $query->answerQuery($object);
+
+            return;
+        }
+
         if ($path === null) {
             $path = $this->downloadFile($location, $uniqueId, $extension, $expectedSize);
             $downloadedSize = (int) @filesize($this->filesDir.$path);
@@ -172,6 +184,16 @@ trait FileMethods
             @unlink($tempPath);
             throw new QueryError(400, 'Bad Request: file is too big');
         }
+
+        return $this->storeDownloadedFile($tempPath, $location, $uniqueId, $extension, $size);
+    }
+
+    /**
+     * Move a downloaded file to its place in the files directory and remember it.
+     */
+    protected function storeDownloadedFile(string $tempPath, RemoteFileLocation $location, string $uniqueId, string $extension, int $size): string
+    {
+        $files = new Filesystem();
 
         // for_suggested_file_name with ignore_file_names: file_<perm_file_id>.<ext>
         $dir = self::getFileTypeName($location->fileType).'/';

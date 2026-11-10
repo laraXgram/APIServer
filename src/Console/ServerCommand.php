@@ -55,6 +55,9 @@ final class ServerCommand extends Command
         'cpu-affinity' => [null, true, 'CPU affinity as 64-bit mask (defaults to all available CPUs)'],
         'main-thread-affinity' => [null, true, 'CPU affinity of the main thread as 64-bit mask (defaults to the value of the option --cpu-affinity)'],
         'proxy' => [null, true, 'HTTP proxy server for outgoing webhook requests in the format http://host:port'],
+        'stream-files' => [null, false, 'serve files at /file/bot<token>/<file_path>, streaming them from Telegram while they are downloaded'],
+        'stream-read-ahead' => [null, true, 'number of 1 MB chunks of a streamed file fetched ahead of the one being sent (default is 4)'],
+        'no-file-storage' => [null, false, 'never write files to disk: downloads are streamed and uploads are sent to Telegram while they are received; requires --stream-files'],
         'no-storage-cleanup' => [null, false, 'never delete downloaded files automatically'],
         'storage-max-files' => [null, true, 'keep at most this many downloaded files per bot (default is 40000, 0 is no limit)'],
         'storage-max-size' => [null, true, 'keep at most this much downloaded data per bot, like 500M or 2G (default is 100M, 0 is no limit)'],
@@ -164,6 +167,19 @@ final class ServerCommand extends Command
     {
         $parameters->localMode = (bool) $input->getOption('local');
 
+        $parameters->streamFiles = (bool) $input->getOption('stream-files');
+        $parameters->fileStorage = !$input->getOption('no-file-storage');
+        if (!$parameters->fileStorage && !$parameters->streamFiles) {
+            // getFile would have no way to hand out the files
+            throw new \InvalidArgumentException("{$this->binary}: --no-file-storage requires --stream-files");
+        }
+        if ($input->getOption('stream-read-ahead') !== null) {
+            $parameters->streamReadAhead = $this->integer('stream-read-ahead', (string) $input->getOption('stream-read-ahead'));
+            if ($parameters->streamReadAhead < 0 || $parameters->streamReadAhead > 64) {
+                throw new \InvalidArgumentException("{$this->binary}: --stream-read-ahead must be between 0 and 64");
+            }
+        }
+
         $apiId = $input->getOption('api-id') ?? (getenv('TELEGRAM_API_ID') ?: getenv('API_ID') ?: '0');
         $parameters->apiId = $this->integer('api-id', $apiId);
         $parameters->apiHash = (string) ($input->getOption('api-hash') ?? (getenv('TELEGRAM_API_HASH') ?: getenv('API_HASH') ?: ''));
@@ -228,7 +244,8 @@ final class ServerCommand extends Command
      */
     private function configureStorageCleanup(InputInterface $input, ServerParameters $parameters): void
     {
-        if ($input->getOption('no-storage-cleanup')) {
+        // nothing is stored to be cleaned
+        if ($input->getOption('no-storage-cleanup') || $input->getOption('no-file-storage')) {
             return;
         }
 

@@ -28,6 +28,7 @@ final class HttpConnection
 
     public function __construct(
         private readonly ClientManager $clientManager,
+        private readonly bool $streamFiles = false,
     ) {
     }
 
@@ -54,6 +55,11 @@ final class HttpConnection
         $path = $read['path'];
         if (!str_starts_with($path, '/')) {
             $this->sendHttpError($connection, $read, 404, 'Not Found: absolute URI is specified in the Request-Line');
+
+            return;
+        }
+        if ($this->streamFiles && str_starts_with($path, '/file/bot')) {
+            $this->handleFile(substr($path, 9), $read, $connection);
 
             return;
         }
@@ -109,6 +115,37 @@ final class HttpConnection
     /**
      * @param array<string, mixed> $read
      */
+    /**
+     * GET /file/bot<token>[/test]/<file_path> (--stream-files).
+     *
+     * @param array<string, mixed> $read
+     */
+    private function handleFile(string $rest, array $read, HttpInboundConnection $connection): void
+    {
+        $slash = strpos($rest, '/');
+        if ($slash === false) {
+            $this->sendHttpError($connection, $read, 404, 'Not Found');
+
+            return;
+        }
+        $token = substr($rest, 0, $slash);
+        $filePath = substr($rest, $slash + 1);
+        $isTestDc = false;
+        if (str_starts_with($filePath, 'test/')) {
+            $isTestDc = true;
+            $filePath = substr($filePath, 5);
+        }
+
+        $client = $this->clientManager->readyClient($token, $isTestDc, $connection->remoteAddress);
+        if ($client === null) {
+            $this->sendHttpError($connection, $read, 404, 'Not Found');
+
+            return;
+        }
+
+        $client->streamFile(RequestReader::urlDecode($filePath, false), $read, $connection);
+    }
+
     private function sendResponse(HttpInboundConnection $connection, array $read, int $status, string $content, string $contentType, int $retryAfter = 0): void
     {
         $head = "HTTP/1.1 {$status} ".self::reason($status)."\r\nConnection: keep-alive\r\nContent-Type: {$contentType}\r\n";

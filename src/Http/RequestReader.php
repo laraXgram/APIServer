@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace LaraGram\Server\Http;
 
+use LaraGram\MTProto\Core\Client as MTProtoClient;
+use LaraGram\Server\Files\StreamedUpload;
 use LaraGram\Server\Support\FileName;
 
 use LaraGram\Log\LoggerInterface;
@@ -80,6 +82,9 @@ final class RequestReader
     /** @var resource|null */
     private $tempHandle = null;
 
+    /** The file being read when files are not stored on disk. */
+    private ?StreamedUpload $stream = null;
+
     private string $tempPath = '';
 
     private int $tempSize = 0;
@@ -90,9 +95,14 @@ final class RequestReader
     /** @var list<HttpFile> */
     private array $files = [];
 
+    /**
+     * @param (\Closure(string): ?MTProtoClient)|null $uploadClient the connection of the bot a request path belongs
+     *     to; when given, files are never written to disk (--no-file-storage), see {@see StreamedUpload}
+     */
     public function __construct(
         private readonly string $tempDir,
         private readonly ?LoggerInterface $logger = null,
+        private readonly ?\Closure $uploadClient = null,
     ) {
     }
 
@@ -233,7 +243,7 @@ final class RequestReader
                 $this->parseArgsBody();
                 break;
             case self::BODY_FILE:
-                if ($this->tempHandle !== null) {
+                if ($this->tempHandle !== null || $this->stream !== null) {
                     $this->closeTempFile('file', '', $this->contentType);
                 }
                 break;
@@ -252,6 +262,8 @@ final class RequestReader
      */
     public function abort(): void
     {
+        $this->stream?->discard();
+        $this->stream = null;
         if ($this->tempHandle !== null) {
             fclose($this->tempHandle);
             $this->tempHandle = null;
@@ -743,7 +755,16 @@ final class RequestReader
      */
     private function openTempFile(string $fieldName, string $fileName): void
     {
-        if ($this->tempHandle !== null) {
+        if ($this->tempHandle !== null || $this->stream !== null) {
+            return;
+        }
+
+        if ($this->uploadClient !== null) {
+            $path = $this->path;
+            $resolve = $this->uploadClient;
+            $this->stream = new StreamedUpload(static fn (): ?MTProtoClient => $resolve($path));
+            $this->tempSize = 0;
+
             return;
         }
 
@@ -774,6 +795,12 @@ final class RequestReader
      */
     private function saveFilePart(string $part): void
     {
+        if ($this->stream !== null) {
+            $this->stream->write($part);
+            $this->tempSize += strlen($part);
+
+            return;
+        }
         $written = @fwrite($this->tempHandle, $part);
         if ($written !== strlen($part)) {
             throw new HttpReaderException(500, 'Internal Server Error: can\'t save file part');
@@ -783,6 +810,13 @@ final class RequestReader
 
     private function closeTempFile(string $fieldName, string $fileName, string $contentType): void
     {
+        if ($this->stream !== null) {
+            $this->stream->finish();
+            $this->files[] = new HttpFile($fieldName, $fileName, $contentType, $this->tempSize, '', $this->stream);
+            $this->stream = null;
+
+            return;
+        }
         fclose($this->tempHandle);
         $this->tempHandle = null;
         $this->files[] = new HttpFile($fieldName, $fileName, $contentType, $this->tempSize, $this->tempPath);

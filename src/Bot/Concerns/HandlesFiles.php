@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaraGram\Server\Bot\Concerns;
 
+use LaraGram\Server\Files\StreamedUpload;
 use LaraGram\MTProto\Foundation\FileUploader;
 use LaraGram\Server\Bot\QueryError;
 use LaraGram\Server\Entities\FormattedText;
@@ -70,6 +71,13 @@ trait HandlesFiles
 
         $file = $fieldName === '' ? null : $query->file($fieldName);
         if ($file !== null) {
+            if ($file->stream !== null) {
+                // a file that was not written to disk keeps the name the client gave it
+                $name = FileName::clean($file->name);
+
+                return ['_' => 'inputFileLocal', 'path' => $name === '' ? 'file' : $name, 'stream' => $file->stream];
+            }
+
             return ['_' => 'inputFileLocal', 'path' => $file->tempFileName];
         }
 
@@ -125,10 +133,11 @@ trait HandlesFiles
 
             // reuse_uploaded_photos_by_hash: a photo uploaded before isn't uploaded again
             $hash = '';
+            $stream = $inputFile['stream'] ?? null;
             if ($fileType === FileType::PHOTO) {
-                $size = @filesize($path);
+                $size = $stream !== null ? $stream->size() : @filesize($path);
                 if ($size !== false && $size > 0 && $size < self::MAX_PHOTO_HASH_SIZE) {
-                    $content = @file_get_contents($path);
+                    $content = $stream !== null ? ($stream->contents() ?? false) : @file_get_contents($path);
                     if ($content !== false) {
                         $hash = hash('sha256', $content, true);
                         if (isset($this->uploadedPhotoHashes[$hash])) {
@@ -137,7 +146,7 @@ trait HandlesFiles
                     }
                 }
             }
-            $file = $this->registerLocal($fileType, $path);
+            $file = $this->registerLocal($fileType, $path, $stream);
             if ($hash !== '') {
                 $file['photo_hash'] = $hash;
             }
@@ -179,23 +188,29 @@ trait HandlesFiles
      *
      * @return array<string, mixed>
      */
-    private function registerLocal(int $fileType, string $path): array
+    private function registerLocal(int $fileType, string $path, ?StreamedUpload $stream = null): array
     {
         if ($path === '') {
             throw new QueryError(400, 'File must have non-empty path');
         }
-        $realPath = realpath($path);
-        if ($realPath === false) {
-            throw new QueryError(400, 'Can\'t find real file path');
+        if ($stream !== null) {
+            // a file of the request that was not written to disk
+            $realPath = $path;
+            $size = $stream->size();
+        } else {
+            $realPath = realpath($path);
+            if ($realPath === false) {
+                throw new QueryError(400, 'Can\'t find real file path');
+            }
+            $stat = @stat($realPath);
+            if ($stat === false) {
+                throw new QueryError(400, 'Can\'t get stat about the file');
+            }
+            if (!is_file($realPath)) {
+                throw new QueryError(400, 'File must be a regular file');
+            }
+            $size = (int) $stat['size'];
         }
-        $stat = @stat($realPath);
-        if ($stat === false) {
-            throw new QueryError(400, 'Can\'t get stat about the file');
-        }
-        if (!is_file($realPath)) {
-            throw new QueryError(400, 'File must be a regular file');
-        }
-        $size = (int) $stat['size'];
         if ($size === 0) {
             throw new QueryError(400, 'File must be non-empty');
         }
@@ -212,7 +227,8 @@ trait HandlesFiles
             throw $tooBig(' for a video note', self::MAX_VIDEO_NOTE_SIZE);
         }
 
-        return ['kind' => 'local', 'path' => $realPath, 'size' => $size, 'type' => $fileType];
+        return array_filter(['kind' => 'local', 'path' => $realPath, 'size' => $size, 'type' => $fileType, 'stream' => $stream],
+            static fn ($value): bool => $value !== null);
     }
 
     /**
@@ -228,7 +244,7 @@ trait HandlesFiles
             return null;
         }
         try {
-            $file = $this->registerLocal(FileType::THUMBNAIL, $thumbnail['path']);
+            $file = $this->registerLocal(FileType::THUMBNAIL, $thumbnail['path'], $thumbnail['stream'] ?? null);
         } catch (QueryError) {
             return null;
         }
@@ -336,7 +352,13 @@ trait HandlesFiles
             $this->pendingPhotoHashes[\Swoole\Coroutine::getCid()][] = $file['photo_hash'];
         }
         try {
+            if (isset($file['stream'])) {
+                return $file['stream']->inputFile($this->td, FileName::baseName($file['path']));
+            }
+
             return (new FileUploader($this->td))->fromPath($file['path'], FileName::baseName($file['path']));
+        } catch (QueryError $e) {
+            throw $e;
         } catch (\Throwable $e) {
             throw QueryError::fromThrowable($e);
         }

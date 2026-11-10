@@ -44,11 +44,13 @@ final class HttpMessageParser
 
     /**
      * @param \Closure(): void $sendContinue answers "Expect: 100-continue"
+     * @param \Closure|null $uploadClient see {@see RequestReader::__construct()}
      */
     public function __construct(
         private readonly string $tempDirectory,
         private readonly ?LoggerInterface $logger,
         private readonly \Closure $sendContinue,
+        private readonly ?\Closure $uploadClient = null,
     ) {
     }
 
@@ -131,7 +133,7 @@ final class HttpMessageParser
 
         [$target, $contentLength, $transferEncoding] = $this->parseHead($head);
 
-        $this->reader = new RequestReader($this->tempDirectory, $this->logger);
+        $this->reader = new RequestReader($this->tempDirectory, $this->logger, $this->uploadClient);
         $this->reader->begin($target, $this->headers);
 
         if ($transferEncoding === '' && $contentLength <= 0) {

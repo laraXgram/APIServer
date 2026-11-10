@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LaraGram\Server\Bot;
 
+use LaraGram\MTProto\Core\Client as MTProtoClient;
 use LaraGram\Server\Foundation\ServerParameters;
 use LaraGram\Server\Http\Query;
 use LaraGram\Server\Stats\BotStatActor;
@@ -218,6 +219,37 @@ final class ClientManager
         }
 
         $this->clients[$key]->send($query);
+    }
+
+    /**
+     * The bot of a token, started and authorized like for any request, or
+     * null when the token can't be used. Used by the requests that need the
+     * bot's connection before a method is called: streamed files and the
+     * uploads of a server that doesn't store files.
+     */
+    public function readyClient(string $token, bool $isTestDc, string $ip): ?Client
+    {
+        // an internal getMe is answered once the bot has logged in
+        $query = new Query($token, $isTestDc, 'getme', [], [], [], $ip, true);
+        $this->send($query);
+        $query->wait();
+        if ($query->httpStatusCode() !== 200) {
+            return null;
+        }
+
+        return $this->clients[$isTestDc ? $token.'/test' : $token] ?? null;
+    }
+
+    /**
+     * The MTProto connection of the bot a request path ("/bot<token>[/test]/<method>") belongs to.
+     */
+    public function uploadClient(string $path, string $ip): ?MTProtoClient
+    {
+        if (preg_match('~^/bot([^/]+)(/test)?/~', $path, $match) !== 1) {
+            return null;
+        }
+
+        return $this->readyClient($match[1], ($match[2] ?? '') !== '', $ip)?->mtproto();
     }
 
     /**

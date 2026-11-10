@@ -9,7 +9,8 @@ namespace LaraGram\Server\Http;
  * filename, or a whole request body of an unsupported content type.
  *
  * The bytes live in a temporary file, as in TDLib, so large uploads are
- * not kept in worker memory once the request has been read.
+ * not kept in worker memory once the request has been read. When files are
+ * not stored on disk, they are a {@see StreamedUpload} instead.
  */
 final class HttpFile
 {
@@ -19,11 +20,13 @@ final class HttpFile
         public readonly string $contentType,
         public readonly int $size,
         public readonly string $tempFileName,
+        public readonly ?\LaraGram\Server\Files\StreamedUpload $stream = null,
     ) {
     }
 
     public function delete(): void
     {
+        $this->stream?->discard();
         if ($this->tempFileName !== '' && is_file($this->tempFileName)) {
             @unlink($this->tempFileName);
             // HttpReader::delete_temp_file also removes the per-file directory.

@@ -20,6 +20,7 @@ use LaraGram\Server\Bot\Concerns\ReceivesQueries;
 use LaraGram\Server\Bot\Concerns\ReceivesUpdates;
 use LaraGram\Server\Bot\Concerns\ResolvesChats;
 use LaraGram\Server\Bot\Concerns\SendsMessages;
+use LaraGram\Server\Bot\Concerns\StreamsFiles;
 use LaraGram\Server\Bot\Methods\BotManagementMethods;
 use LaraGram\Server\Bot\Methods\BotSettingsMethods;
 use LaraGram\Server\Bot\Methods\BusinessMethods;
@@ -80,6 +81,7 @@ final class Client
     use ReceivesUpdates;
     use ResolvesChats;
     use SendsMessages;
+    use StreamsFiles;
     use SendMethods;
     use ForwardMethods;
     use EditMethods;
@@ -917,6 +919,14 @@ final class Client
             $this->users[$user['id']] = $user;
             $this->saveChatInfo('u'.$user['id'], $user);
         }
+    }
+
+    /**
+     * The MTProto connection of a logged-in bot.
+     */
+    public function mtproto(): ?MTProtoClient
+    {
+        return $this->wasAuthorized && !$this->loggingOut && !$this->closing ? $this->td : null;
     }
 
     public function getMyId(): int

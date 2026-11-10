@@ -316,7 +316,10 @@ trait HandlesWebhook
                 $files = new Filesystem();
                 try {
                     $files->ensureDirectoryExists($this->dir, 0700);
-                    $copied = @copy($certificate->tempFileName, $this->getWebhookCertificatePath());
+                    // the certificate is part of the bot's settings, so it is saved even without file storage
+                    $copied = $certificate->stream !== null
+                        ? @file_put_contents($this->getWebhookCertificatePath(), (string) $certificate->stream->contents()) !== false
+                        : @copy($certificate->tempFileName, $this->getWebhookCertificatePath());
                 } catch (\Throwable) {
                     $copied = false;
                 }
