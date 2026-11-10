@@ -328,7 +328,7 @@ trait HandlesRichMessages
         $text = fn (): ?array => $this->richTextFromJson($object->extractField('text'));
         switch ($type) {
             case 'bold': case 'italic': case 'underline': case 'strikethrough': case 'spoiler': case 'mention':
-            case 'hashtag': case 'cashtag': case 'bot_command': case 'code': case 'bank_card_number':
+            case 'hashtag': case 'cashtag': case 'bot_command': case 'code': case 'bank_card_number': case 'ton_address':
             case 'subscript': case 'superscript': case 'marked':
                 return ['_' => $type, 'text' => $text()];
             case 'date_time':
@@ -748,6 +748,7 @@ trait HandlesRichMessages
             case 'hashtag':
             case 'cashtag':
             case 'bank_card_number':
+            case 'ton_address':
             case 'bot_command':
                 return $inner();
             case 'date_time':

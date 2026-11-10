@@ -534,6 +534,8 @@ final class JsonRichMessage
                 return ['type' => 'phone_number', 'text' => $this->text($text['text']), 'phone_number' => self::fullText($text['text'])];
             case 'textBankCard':
                 return ['type' => 'bank_card_number', 'text' => $this->text($text['text']), 'bank_card_number' => self::fullText($text['text'])];
+            case 'textTonAddress':
+                return ['type' => 'ton_address', 'text' => $this->text($text['text']), 'address' => self::fullText($text['text'])];
             case 'textMentionName':
                 $userId = (int) $text['user_id'];
 
