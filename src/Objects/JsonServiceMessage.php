@@ -333,6 +333,20 @@ final class JsonServiceMessage
             case 'messageChatJoinFromCommunity':
                 $object['community_chat_joined'] = ['community' => self::community($content['community_id'], $client)];
                 break;
+            case 'messageTonWalletTransfer':
+                // Client::JsonTonWalletTransfer
+                $transfer = [
+                    'transaction_id' => $content['transaction_id'],
+                    'peer_address' => $content['peer_address'],
+                    'amount' => (string) $content['amount'],
+                ];
+                if (!$content['is_comment_encrypted']) {
+                    $transfer['comment'] = $content['comment'];
+                }
+                $object['ton_wallet_transfer'] = $transfer;
+                break;
+            case 'messageTonConnectRequest':
+                break;
         }
     }
 

@@ -370,6 +370,19 @@ final class ServiceConverter
 
             case 'messageActionChatJoinedViaCommunity':
                 return ['_' => 'messageChatJoinFromCommunity', 'community_id' => (int) $action['community_id']];
+
+            case 'messageActionGramTransfer':
+                return [
+                    '_' => 'messageTonWalletTransfer',
+                    'transaction_id' => (string) ($action['transaction_id'] ?? ''),
+                    'peer_address' => (string) ($action['peer_address'] ?? ''),
+                    'amount' => max(0, (int) ($action['amount'] ?? 0)),
+                    'comment' => (string) ($action['comment'] ?? ''),
+                    'is_comment_encrypted' => !empty($action['comment_encrypted']),
+                ];
+
+            case 'messageActionWalletTonConnectRequest':
+                return ['_' => 'messageTonConnectRequest'];
         }
 
         // explicit empty or wrong action
