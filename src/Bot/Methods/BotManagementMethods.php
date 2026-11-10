@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace LaraGram\Server\Bot\Methods;
 
 use LaraGram\Server\Bot\QueryError;
-use LaraGram\Server\Entities\TextFormatting;
+use LaraGram\Server\Entities\FormattedText;
 use LaraGram\Server\Http\Query;
 use LaraGram\Server\Objects\ChatId;
 use LaraGram\Server\Objects\JsonUser;
@@ -21,7 +21,7 @@ trait BotManagementMethods
     public function processVerifyUserQuery(Query $query): void
     {
         $userId = self::getUserIdArg($query);
-        $customDescription = $query->arg('custom_description');
+        $customDescription = $this->getCustomVerificationDescription($query);
         $this->checkUser($userId);
         $this->setCustomBotVerification($userId, true, $customDescription);
         $query->answerQuery(true);
@@ -29,7 +29,7 @@ trait BotManagementMethods
 
     public function processVerifyChatQuery(Query $query): void
     {
-        $customDescription = $query->arg('custom_description');
+        $customDescription = $this->getCustomVerificationDescription($query);
         $chatId = $this->checkChat($query->arg('chat_id'), self::ACCESS_READ);
         $this->setCustomBotVerification($chatId, true, $customDescription);
         $query->answerQuery(true);
@@ -39,7 +39,7 @@ trait BotManagementMethods
     {
         $userId = self::getUserIdArg($query);
         $this->checkUserNoFail($userId);
-        $this->setCustomBotVerification($userId, false, '');
+        $this->setCustomBotVerification($userId, false, new FormattedText());
         $query->answerQuery(true);
     }
 
@@ -50,7 +50,7 @@ trait BotManagementMethods
         if (ChatId::type($chatId) === null || $chatId === 0) {
             throw new QueryError(400, 'Invalid chat identifier specified');
         }
-        $this->setCustomBotVerification($chatId, false, '');
+        $this->setCustomBotVerification($chatId, false, new FormattedText());
         $query->answerQuery(true);
     }
 
@@ -112,21 +112,34 @@ trait BotManagementMethods
     }
 
     /**
-     * BotInfoManager::set_custom_bot_verification for the bot itself.
+     * The custom description of verifyUser and verifyChat with its parse mode and entities.
      */
-    private function setCustomBotVerification(int $chatId, bool $isVerified, string $customDescription): void
+    private function getCustomVerificationDescription(Query $query): FormattedText
     {
-        $customDescription = TextFormatting::cleanInputString($customDescription) ?? throw new QueryError(400, 'Strings must be encoded in UTF-8');
+        return $this->getFormattedText($query->arg('custom_description'), $query->arg('custom_description_parse_mode'),
+            self::getInputEntities($query, 'custom_description_entities'));
+    }
+
+    /**
+     * BotInfoManager::set_custom_bot_verification for the bot itself: only
+     * text links are kept in the description.
+     */
+    private function setCustomBotVerification(int $chatId, bool $isVerified, FormattedText $customDescription): void
+    {
         if (ChatId::type($chatId) !== ChatId::TYPE_PRIVATE && !$this->isChatKnown($chatId)) {
             throw new QueryError(400, 'Can\'t access the verified entity');
         }
+        $customDescription = $this->getOutgoingFormattedText($customDescription, true, true);
+        $customDescription = new FormattedText($customDescription->text, array_values(array_filter(
+            $customDescription->entities, static fn (array $entity): bool => $entity['type'] === 'TextUrl')));
+
         $this->invokeOrFail('bots.setCustomVerification', self::untl(self::tl('bots.setCustomVerification', [
             'enabled' => $isVerified,
             'peer' => $this->inputPeer($chatId),
-            // A textWithEntities since layer 232; the Bot API sends plain text.
-            'custom_description' => $customDescription !== ''
-                ? self::tl('textWithEntities', ['text' => $customDescription, 'entities' => []])
-                : null,
+            'custom_description' => $customDescription->text !== '' ? self::tl('textWithEntities', [
+                'text' => $customDescription->text,
+                'entities' => $customDescription->inputEntities(fn (int $userId): array => $this->inputUser($userId)),
+            ]) : null,
         ])));
     }
 
