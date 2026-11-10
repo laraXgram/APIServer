@@ -39,7 +39,9 @@ final class UpdateType
     public const GUEST_MESSAGE = 26;
     public const SUBSCRIPTION = 27;
     public const STOP_MESSAGE_DRAFT = 28;
-    public const SIZE = 29;
+    public const WIDGET_QUERY = 29;
+    public const SHARED_WIDGET_QUERY = 30;
+    public const SIZE = 31;
 
     public const NAMES = [
         'message', 'edited_message', 'channel_post', 'edited_channel_post', 'inline_query', 'chosen_inline_result',
@@ -47,7 +49,7 @@ final class UpdateType
         'my_chat_member', 'chat_member', 'chat_join_request', 'chat_boost', 'removed_chat_boost', 'message_reaction',
         'message_reaction_count', 'business_connection', 'business_message', 'edited_business_message',
         'deleted_business_messages', 'purchased_paid_media', 'managed_bot', 'guest_message', 'subscription',
-        'stopped_message_generation',
+        'stopped_message_generation', 'widget_query', 'shared_widget_query',
     ];
 
     /** Everything but chat_member, message_reaction and message_reaction_count. */

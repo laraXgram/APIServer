@@ -12,9 +12,11 @@ use LaraGram\Server\Http\Query;
 use LaraGram\Server\Messages\MessageConverter;
 use LaraGram\Server\Messages\MessageInfo;
 use LaraGram\Server\Objects\ChatId;
+use LaraGram\Server\Objects\JsonChat;
 use LaraGram\Server\Objects\JsonMedia;
 use LaraGram\Server\Objects\JsonMessage;
 use LaraGram\Server\Objects\JsonServiceMessage;
+use LaraGram\Server\Objects\JsonTonWallet;
 use LaraGram\Server\Objects\JsonUser;
 use LaraGram\Server\Td\InlineMessageId;
 use LaraGram\Server\Updates\UpdateType;
@@ -72,6 +74,12 @@ trait ReceivesQueries
                 return true;
             case 'updateBotInlineSend':
                 $this->onChosenInlineResult($update);
+
+                return true;
+            case 'updateBotWidgetQuery':
+            case 'updateInlineBotWidgetQuery':
+            case 'updateBotWidgetCopyQuery':
+                $this->onNewWidgetQuery($update);
 
                 return true;
             case 'updateBotShippingQuery':
@@ -358,6 +366,130 @@ trait ReceivesQueries
         $object['result_id'] = (string) ($update['id'] ?? '');
 
         $this->addUpdate(UpdateType::CHOSEN_INLINE_RESULT, JsonWriter::encode($object), 600, $userId + (2 << 33));
+    }
+
+    /**
+     * WidgetManager::on_new_widget_query / on_new_inline_widget_query / on_new_widget_copy_query
+     * → Client::add_new_widget_query: a query from a widget in a message, an inline message or a shared widget.
+     *
+     * @param array<string, mixed> $update
+     */
+    private function onNewWidgetQuery(array $update): void
+    {
+        $userId = (int) ($update['user_id'] ?? 0);
+        if ($userId <= 0) {
+            return;
+        }
+
+        $type = $update['_'];
+        $chatId = 0;
+        if ($type === 'updateBotWidgetQuery') {
+            $chatId = ChatId::fromPeer($update['peer'] ?? null);
+            if ($chatId === 0 || (int) ($update['msg_id'] ?? 0) <= 0) {
+                return;
+            }
+        } elseif ($type === 'updateInlineBotWidgetQuery' && !isset($update['inline_message_id'])) {
+            return;
+        }
+
+        $queryType = $update['query_type'] ?? [];
+        $withWallet = ($queryType['_'] ?? '') === 'widgetQueryTypeData' && !empty($queryType['with_wallet']);
+        $walletCard = $withWallet ? JsonTonWallet::cardFromServer($update['wallet_card'] ?? null) : null;
+        if ($walletCard !== null) {
+            // Client::get_widget_query_sticker_set_ids
+            $sets = [];
+            foreach (JsonTonWallet::cardGifts($walletCard) as $gift) {
+                $sets = array_merge($sets, self::giftStickerSets($gift));
+            }
+            $this->loadStickerSetNames($sets);
+        }
+
+        $object = ['id' => (string) (int) $update['query_id'], 'from' => JsonUser::make($userId, $this)];
+        $widgetId = (int) ($update['widget_id'] ?? 0);
+        if ($type === 'updateBotWidgetQuery') {
+            $object['chat'] = JsonChat::make($chatId, $this);
+            $object['message_id'] = (int) $update['msg_id'];
+            $object['chat_instance'] = (string) (int) ($update['chat_instance'] ?? 0);
+        } elseif ($type === 'updateInlineBotWidgetQuery') {
+            $object['inline_message_id'] = InlineMessageId::encode($update['inline_message_id']);
+            $object['chat_instance'] = (string) (int) ($update['chat_instance'] ?? 0);
+            if ((string) ($update['chat_type'] ?? '') !== '') {
+                $object['chat_type'] = (string) $update['chat_type'];
+            }
+        }
+        $object['type'] = $this->widgetQueryTypeObject($queryType, $walletCard);
+        $data = (string) ($update['data'] ?? '');
+        $object['data'] = mb_check_encoding($data, 'UTF-8') ? $data : new JsonRawString($data);
+        if ($widgetId !== 0 || $type === 'updateBotWidgetCopyQuery') {
+            $object['widget_id'] = (string) $widgetId;
+        }
+
+        $this->addUpdate($type === 'updateBotWidgetCopyQuery' ? UpdateType::SHARED_WIDGET_QUERY : UpdateType::WIDGET_QUERY,
+            JsonWriter::encode($object), 150, $userId + (16 << 33));
+    }
+
+    /**
+     * Client::JsonWidgetQueryType of a TL WidgetQueryType.
+     *
+     * @param array<string, mixed> $queryType
+     * @param array<string, mixed>|null $walletCard
+     * @return array<string, mixed>
+     */
+    private function widgetQueryTypeObject(array $queryType, ?array $walletCard): array
+    {
+        switch ($queryType['_'] ?? '') {
+            case 'widgetQueryTypeSignData':
+                return [
+                    'type' => 'sign_data',
+                    'wallet' => self::widgetQueryWalletObject($queryType['wallet'] ?? []),
+                    'sign_data' => (string) ($queryType['sign_data']['data'] ?? ''),
+                ];
+            case 'widgetQueryTypeSentTransaction':
+                return [
+                    'type' => 'sent_transaction',
+                    'wallet' => self::widgetQueryWalletObject($queryType['wallet'] ?? []),
+                    'msg_hash' => (string) ($queryType['msg_hash'] ?? ''),
+                ];
+        }
+
+        $object = ['type' => 'data'];
+        if ($walletCard !== null) {
+            $object['wallet_card'] = JsonTonWallet::card($walletCard, $this);
+        }
+
+        return $object;
+    }
+
+    /**
+     * Client::JsonWidgetQueryWallet of a TL userWallet.
+     *
+     * @param array<string, mixed> $wallet
+     * @return array<string, string>
+     */
+    private static function widgetQueryWalletObject(array $wallet): array
+    {
+        $object = ['address' => (string) ($wallet['address'] ?? ''), 'amount' => (string) max(0, (int) ($wallet['balance'] ?? 0))];
+        $publicKey = (string) ($wallet['public_key'] ?? '');
+        $stateInit = (string) ($wallet['state_init'] ?? '');
+        if ($publicKey !== '' && $stateInit !== '') {
+            $object['public_key'] = bin2hex($publicKey);
+            $object['state_init'] = base64_encode($stateInit);
+        }
+
+        return $object;
+    }
+
+    public function processAnswerWidgetQueryQuery(Query $query): void
+    {
+        $widgetQueryId = self::toInteger64($query->arg('widget_query_id'));
+        $data = self::cleanInputStringOrFail($query->arg('data'));
+
+        // SetBotWidgetQueryAnswerQuery
+        $this->invokeOrFail('messages.setBotWidgetQueryAnswer', self::untl(self::tl('messages.setBotWidgetQueryAnswer', [
+            'query_id' => $widgetQueryId,
+            'result' => $data !== '' ? $data : null,
+        ])));
+        $query->answerQuery(true);
     }
 
     /**
