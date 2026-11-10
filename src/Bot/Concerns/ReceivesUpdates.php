@@ -456,7 +456,7 @@ trait ReceivesUpdates
             case 'messagePaidMessagesRefunded': case 'messageGroupCall': case 'messageGiftedGrams':
             case 'messageSuggestBirthdate': case 'messageUpgradedGiftPurchaseOffer':
             case 'messageUpgradedGiftPurchaseOfferRejected': case 'messageChatHasProtectedContentToggled':
-            case 'messageChatHasProtectedContentDisableRequested':
+            case 'messageChatHasProtectedContentDisableRequested': case 'messageTonConnectRequest':
                 return true;
         }
 
