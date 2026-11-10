@@ -383,6 +383,9 @@ final class ServiceConverter
 
             case 'messageActionWalletTonConnectRequest':
                 return ['_' => 'messageTonConnectRequest'];
+
+            case 'messageActionNoPaidMessagesTokenUsed':
+                return ['_' => 'messageUnpaidMessagesAllowedByLink'];
         }
 
         // explicit empty or wrong action
