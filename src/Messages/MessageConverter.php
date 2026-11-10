@@ -758,9 +758,52 @@ final class MessageConverter
             case 'messageMediaToDo':
                 return ['_' => 'messageChecklist', 'list' => JsonChecklist::fromServer($media['todo'] ?? [], $media['completions'] ?? [], $messageDate)];
 
+            case 'messageMediaWidget':
+                $html = self::widgetHtml((string) ($media['payload'] ?? ''));
+                if ($html === '') {
+                    return ['_' => 'messageUnsupported'];
+                }
+
+                return self::widgetContent($media, $html, $text, $aboveMedia, !empty($media['is_copy']));
+
             default:
                 return ['_' => 'messageUnsupported'];
         }
+    }
+
+    /**
+     * get_widget_html: the gzipped HTML code of a widget; empty if the payload is invalid.
+     */
+    public static function widgetHtml(string $payload): string
+    {
+        $html = $payload === '' ? false : @zlib_decode($payload);
+        if (!is_string($html) || !mb_check_encoding($html, 'UTF-8')) {
+            return '';
+        }
+
+        return $html;
+    }
+
+    /**
+     * MessageWidget of a TL messageMediaWidget or botInlineMessageWidget.
+     *
+     * @param array<string, mixed> $widget
+     * @return array<string, mixed> td_api messageWidget
+     */
+    public static function widgetContent(array $widget, string $html, FormattedText $caption, bool $aboveMedia, bool $isCopy): array
+    {
+        return [
+            '_' => 'messageWidget',
+            'width' => max(0, (int) ($widget['width'] ?? 0)),
+            'height' => max(0, (int) ($widget['height'] ?? 0)),
+            'html' => $html,
+            'public_data' => (string) ($widget['public_data'] ?? ''),
+            'chat_data' => (string) ($widget['chat_data'] ?? ''),
+            'widget_id' => (int) ($widget['widget_id'] ?? 0),
+            'caption' => $caption,
+            'show_caption_above_media' => $aboveMedia,
+            'is_copy' => $isCopy,
+        ];
     }
 
     /**

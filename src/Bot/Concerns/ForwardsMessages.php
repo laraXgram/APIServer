@@ -218,7 +218,7 @@ trait ForwardsMessages
         if ($type === 'messageText') {
             return !TextFormatting::isEmptyString($content['text']->text) || ($content['link_preview_options']['url'] ?? '') !== '';
         }
-        if ($isCopy && in_array($type, ['messageGiveaway', 'messageGiveawayWinners', 'messagePaidMedia', 'messageInvoice'], true)) {
+        if ($isCopy && in_array($type, ['messageGiveaway', 'messageGiveawayWinners', 'messagePaidMedia', 'messageInvoice', 'messageWidget'], true)) {
             return false;
         }
 
@@ -231,6 +231,7 @@ trait ForwardsMessages
         'messageGame', 'messageGiveaway', 'messageGiveawayWinners', 'messageInvoice', 'messageLiveLocation',
         'messageLocation', 'messagePaidMedia', 'messagePhoto', 'messagePoll', 'messageSticker', 'messageStory',
         'messageVenue', 'messageVideo', 'messageVideoNote', 'messageVoiceNote', 'messageChecklist', 'messageRichText',
+        'messageWidget',
     ];
 
     /**
@@ -264,6 +265,7 @@ trait ForwardsMessages
             'messageVoiceNote' => 'VoiceNote',
             'messageChecklist' => 'ToDoList',
             'messageRichText' => 'RichText',
+            'messageWidget' => 'Widget',
             default => 'Unsupported',
         };
     }

@@ -434,6 +434,50 @@ trait InlineMethods
             return ['_' => 'inputMessageRichMessage', 'message' => $this->inputRichMessageFromJson($query, $richMessage), 'clear_draft' => false];
         }
 
+        if ($object->hasField('html')) {
+            $html = $object->getRequiredStringField('html');
+            $width = $object->getOptionalIntField('width');
+            $height = $object->getOptionalIntField('height');
+            $publicData = $object->getOptionalStringField('public_data');
+            $chatData = $object->getOptionalStringField('chat_data');
+            $caption = $object->getOptionalStringField('caption');
+            $parseMode = $object->getOptionalStringField('parse_mode');
+            $caption = $this->getFormattedText($caption, $parseMode, $object->extractField('caption_entities'));
+            $showCaptionAboveMedia = $object->getOptionalBoolField('show_caption_above_media');
+            $allowQueries = $object->getOptionalBoolField('allow_queries');
+            $isShared = $object->getOptionalBoolField('is_shared');
+
+            return [
+                '_' => 'inputMessageWidget',
+                'width' => max(0, min(self::MAX_LENGTH, $width)),
+                'height' => max(0, min(self::MAX_LENGTH, $height)),
+                'html' => $html,
+                'public_data' => $publicData,
+                'chat_data' => $chatData,
+                'caption' => $caption,
+                'show_caption_above_media' => $showCaptionAboveMedia,
+                'allow_queries' => $allowQueries,
+                'is_shared' => $isShared,
+            ];
+        }
+
+        if ($object->hasField('widget_id')) {
+            $widgetId = $object->getRequiredLongField('widget_id');
+            $chatData = $object->getOptionalStringField('chat_data');
+            $caption = $object->getOptionalStringField('caption');
+            $parseMode = $object->getOptionalStringField('parse_mode');
+            $caption = $this->getFormattedText($caption, $parseMode, $object->extractField('caption_entities'));
+            $showCaptionAboveMedia = $object->getOptionalBoolField('show_caption_above_media');
+
+            return [
+                '_' => 'inputMessageSharedWidget',
+                'widget_id' => $widgetId,
+                'chat_data' => $chatData,
+                'caption' => $caption,
+                'show_caption_above_media' => $showCaptionAboveMedia,
+            ];
+        }
+
         $messageText = $object->getOptionalStringField('message_text');
         if ($messageText !== '') {
             if ($object->hasField('link_preview_options')) {
@@ -1033,6 +1077,20 @@ trait InlineMethods
                     'geo_point' => $media['geo_point'], 'title' => $media['title'], 'address' => $media['address'],
                     'provider' => $media['provider'], 'venue_id' => $media['venue_id'], 'venue_type' => $media['venue_type'],
                     'reply_markup' => $tlReplyMarkup,
+                ]);
+
+            case 'inputMessageWidget':
+            case 'inputMessageSharedWidget':
+                $widget = $this->getInputWidgetContent($content, true);
+                $entities = $widget['text']->inputEntities($inputUser);
+                $media = $widget['media'];
+                unset($media['_']);
+
+                return self::tl($content['_'] === 'inputMessageWidget' ? 'inputBotInlineMessageWidget' : 'inputBotInlineMessageWidgetId', $media + [
+                    'invert_media' => $widget['invert_media'],
+                    'reply_markup' => $tlReplyMarkup,
+                    'message' => $widget['text']->text,
+                    'entities' => $entities !== [] ? $entities : null,
                 ]);
         }
 

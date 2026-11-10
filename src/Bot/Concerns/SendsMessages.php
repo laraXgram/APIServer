@@ -1167,6 +1167,10 @@ trait SendsMessages
 
             case 'inputMessageRichMessage':
                 return $this->getInputRichContent($chatId, $content);
+
+            case 'inputMessageWidget':
+            case 'inputMessageSharedWidget':
+                return $this->getInputWidgetContent($content);
         }
 
         return $this->getInputMediaContent($chatId, $content);
@@ -1285,6 +1289,7 @@ trait SendsMessages
                     : ($isChannel && $this->isMonoforum($chatId) ? 'Checklists can\'t be sent to channel direct messages chats' : null)),
             'Venue' => $permissions->canSendMessages() ? null : 'Not enough rights to send venues to the chat',
             'Video' => $permissions->canSendVideos() ? null : 'Not enough rights to send videos to the chat',
+            'Widget' => $permissions->canUseInlineBots() ? null : 'Not enough rights to send widgets to the chat',
             'VideoNote' => !$permissions->canSendVideoNotes() ? 'Not enough rights to send video notes to the chat'
                 : (ChatId::type($chatId) === ChatId::TYPE_PRIVATE && !empty($this->getUser($chatId)['voice_messages_forbidden']) ? 'User restricted receiving of video note messages' : null),
             'VoiceNote' => !$permissions->canSendVoiceNotes() ? 'Not enough rights to send voice notes to the chat'

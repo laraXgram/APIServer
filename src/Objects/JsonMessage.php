@@ -296,6 +296,10 @@ final class JsonMessage
             case 'messageChecklist':
                 $object['checklist'] = JsonChecklist::make($content['list'], $client);
                 break;
+            case 'messageWidget':
+                $object['widget'] = self::widget($content);
+                self::addCaption($object, $content['caption'], $content['show_caption_above_media'], $client);
+                break;
             default:
                 JsonServiceMessage::store($object, $message, $needReply, $client);
                 break;
@@ -615,6 +619,41 @@ final class JsonMessage
             case 'messageChecklist':
                 $object['checklist'] = JsonChecklist::make($content['list'], $client);
                 break;
+            case 'messageWidget':
+                $object['widget'] = self::widget($content);
+                break;
+        }
+
+        return $object;
+    }
+
+    /**
+     * Client::JsonWidget.
+     *
+     * @param array<string, mixed> $widget td_api messageWidget
+     * @return array<string, mixed>
+     */
+    public static function widget(array $widget): array
+    {
+        $object = [];
+        if ($widget['widget_id'] !== 0) {
+            $object['id'] = (string) $widget['widget_id'];
+        }
+        if ($widget['width'] !== 0) {
+            $object['width'] = $widget['width'];
+        }
+        if ($widget['height'] !== 0) {
+            $object['height'] = $widget['height'];
+        }
+        $object['html'] = $widget['html'];
+        if ($widget['public_data'] !== '') {
+            $object['public_data'] = $widget['public_data'];
+        }
+        if ($widget['chat_data'] !== '') {
+            $object['chat_data'] = $widget['chat_data'];
+        }
+        if ($widget['is_copy']) {
+            $object['is_copy'] = true;
         }
 
         return $object;
