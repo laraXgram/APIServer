@@ -42,6 +42,7 @@ use LaraGram\Server\Bot\Methods\StarMethods;
 use LaraGram\Server\Bot\Methods\StickerMethods;
 use LaraGram\Server\Bot\Methods\StoryMethods;
 use LaraGram\Server\Bot\Methods\UserMethods;
+use LaraGram\Server\Bot\Methods\WidgetMethods;
 use LaraGram\Server\Objects\ChatId;
 use LaraGram\Server\Updates\UpdateQueue;
 use LaraGram\Server\Updates\UpdateType;
@@ -101,6 +102,7 @@ final class Client
     use BotManagementMethods;
     use EphemeralMethods;
     use StoryMethods;
+    use WidgetMethods;
 
     /**
      * Methods the official server answers that the documentation does not

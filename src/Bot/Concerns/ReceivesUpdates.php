@@ -99,6 +99,9 @@ trait ReceivesUpdates
                     $this->addUpdate(UpdateType::POLL_ANSWER, JsonWriter::encode(JsonPoll::answer($answer, $this)), 86400, (int) $update['poll_id']);
                 }
                 break;
+            case 'updateMessageWidgetData':
+                $this->onUpdateMessageWidgetData($update);
+                break;
             case 'updateDeleteMessages':
                 // Private chats and basic groups share one id space; the chat is unknown here.
                 break;
