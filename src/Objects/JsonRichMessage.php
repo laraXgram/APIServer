@@ -610,6 +610,8 @@ final class JsonRichMessage
 
         return $format;
     }
+            case 'textTonAddress':
+                return ['type' => 'ton_address', 'text' => $this->text($text['text']), 'address' => self::fullText($text['text'])];
 
     /**
      * RichText::get_full_text.
