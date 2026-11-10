@@ -105,7 +105,7 @@ final class FormattedText
     public function removeUnallowedQuoteUserEntities(bool $skipBotCommands, bool $skipMediaTimestamps): self
     {
         return new self($this->text, array_values(array_filter($this->entities, static fn (array $entity): bool => isset(self::QUOTE_ENTITIES[$entity['type']])
-            || in_array($entity['type'], ['Mention', 'Hashtag', 'Cashtag', 'PhoneNumber', 'BankCardNumber', 'Url', 'EmailAddress'], true)
+            || in_array($entity['type'], ['Mention', 'Hashtag', 'Cashtag', 'PhoneNumber', 'BankCardNumber', 'Url', 'EmailAddress', 'TonAddress'], true)
             || ($entity['type'] === 'BotCommand' && !$skipBotCommands)
             || ($entity['type'] === 'MediaTimestamp' && !$skipMediaTimestamps))));
     }
@@ -139,6 +139,7 @@ final class FormattedText
                 'messageEntityPhone' => ['type' => 'PhoneNumber'],
                 'messageEntityBotCommand' => ['type' => 'BotCommand'],
                 'messageEntityBankCard' => ['type' => 'BankCardNumber'],
+                'messageEntityTonAddress' => ['type' => 'TonAddress'],
                 'messageEntityUrl' => ['type' => 'Url'],
                 'messageEntityEmail' => ['type' => 'EmailAddress'],
                 'messageEntityBold' => ['type' => 'Bold'],

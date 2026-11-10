@@ -39,6 +39,7 @@ final class EntityFinder
         $add('Hashtag', self::matchHashtags($text));
         $add('Cashtag', self::matchCashtags($text));
         $add('BankCardNumber', self::findBankCardNumbers($text));
+        $add('TonAddress', self::findTonAddresses($text));
         $add('Url', self::matchTgUrls($text));
         foreach (self::findUrls($text) as [$begin, $end, $isEmail]) {
             $entities[] = ['type' => $isEmail ? 'EmailAddress' : 'Url', 'offset' => $begin, 'length' => $end - $begin];
@@ -513,6 +514,81 @@ final class EntityFinder
         }
 
         return $result;
+    }
+
+    /**
+     * match_ton_addresses / find_ton_addresses: user-friendly TON addresses,
+     * '/(?<![A-Za-z0-9_\-+\/])[EUk0][A-Za-z0-9_\-+\/]{47}(?![A-Za-z0-9_\-+\/])/'
+     * with a valid checksum.
+     *
+     * @return list<array{0: int, 1: int}>
+     */
+    private static function findTonAddresses(string $s): array
+    {
+        $result = [];
+        $end = strlen($s);
+        $ptr = 0;
+        $base64Characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/-_';
+
+        while (true) {
+            $ptr += strcspn($s, $base64Characters, $ptr);
+            if ($ptr >= $end) {
+                break;
+            }
+            $begin = $ptr;
+            $ptr += strspn($s, $base64Characters, $ptr);
+
+            if (self::isValidTonAddress(substr($s, $begin, $ptr - $begin))) {
+                $result[] = [$begin, $ptr];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * TonWalletManager::check_ton_address for a user-friendly address: 48
+     * base64 or base64url characters, a CRC16 checksum and a valid tag byte.
+     */
+    public static function isValidTonAddress(string $address): bool
+    {
+        if (strlen($address) !== 48) {
+            return false;
+        }
+        if (strspn($address, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_') === 48) {
+            $decoded = base64_decode(strtr($address, '-_', '+/'), true);
+        } elseif (strspn($address, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/') === 48) {
+            $decoded = base64_decode($address, true);
+        } else {
+            return false;
+        }
+        if ($decoded === false || strlen($decoded) !== 36) {
+            return false;
+        }
+
+        $expected = (ord($decoded[34]) << 8) | ord($decoded[35]);
+        if (self::crc16(substr($decoded, 0, 34)) !== $expected) {
+            return false;
+        }
+
+        return (ord($decoded[0]) & 0x3F) === 0x11;
+    }
+
+    /**
+     * td::crc16: CRC-16/XMODEM.
+     */
+    private static function crc16(string $data): int
+    {
+        $crc = 0;
+        $length = strlen($data);
+        for ($i = 0; $i < $length; $i++) {
+            $crc ^= ord($data[$i]) << 8;
+            for ($bit = 0; $bit < 8; $bit++) {
+                $crc = ($crc & 0x8000) !== 0 ? (($crc << 1) ^ 0x1021) & 0xFFFF : ($crc << 1) & 0xFFFF;
+            }
+        }
+
+        return $crc;
     }
 
     /**

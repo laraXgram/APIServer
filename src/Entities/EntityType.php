@@ -16,7 +16,7 @@ final class EntityType
         'Italic' => 6, 'Code' => 7, 'Pre' => 8, 'PreCode' => 9, 'TextUrl' => 10, 'MentionName' => 11,
         'Cashtag' => 12, 'PhoneNumber' => 13, 'Underline' => 14, 'Strikethrough' => 15, 'BlockQuote' => 16,
         'BankCardNumber' => 17, 'MediaTimestamp' => 18, 'Spoiler' => 19, 'CustomEmoji' => 20,
-        'ExpandableBlockQuote' => 21, 'FormattedDate' => 22,
+        'ExpandableBlockQuote' => 21, 'FormattedDate' => 22, 'TonAddress' => 23,
     ];
 
     /** MessageEntity::get_type_priority */
@@ -25,7 +25,7 @@ final class EntityType
         'Italic' => 91, 'Code' => 20, 'Pre' => 11, 'PreCode' => 10, 'TextUrl' => 49, 'MentionName' => 49,
         'Cashtag' => 50, 'PhoneNumber' => 50, 'Underline' => 92, 'Strikethrough' => 93, 'BlockQuote' => 0,
         'BankCardNumber' => 50, 'MediaTimestamp' => 50, 'Spoiler' => 94, 'CustomEmoji' => 99,
-        'ExpandableBlockQuote' => 0, 'FormattedDate' => 30,
+        'ExpandableBlockQuote' => 0, 'FormattedDate' => 30, 'TonAddress' => 50,
     ];
 
     public const SPLITTABLE = ['Bold' => 0, 'Italic' => 1, 'Underline' => 2, 'Strikethrough' => 3, 'Spoiler' => 4];
@@ -35,7 +35,7 @@ final class EntityType
     public const CONTINUOUS = [
         'Mention' => true, 'Hashtag' => true, 'BotCommand' => true, 'Url' => true, 'EmailAddress' => true,
         'TextUrl' => true, 'MentionName' => true, 'Cashtag' => true, 'PhoneNumber' => true,
-        'BankCardNumber' => true, 'MediaTimestamp' => true, 'CustomEmoji' => true,
+        'BankCardNumber' => true, 'MediaTimestamp' => true, 'CustomEmoji' => true, 'TonAddress' => true,
     ];
 
     public const PRE = ['Pre' => true, 'Code' => true, 'PreCode' => true, 'FormattedDate' => true];

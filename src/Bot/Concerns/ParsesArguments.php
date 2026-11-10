@@ -308,7 +308,7 @@ trait ParsesArguments
 
                 return $entity + ['type' => 'FormattedDate', 'unix_time' => $unixTime, 'flags' => $flags];
             case 'mention': case 'hashtag': case 'cashtag': case 'bot_command': case 'url':
-            case 'email': case 'phone_number': case 'bank_card_number':
+            case 'email': case 'phone_number': case 'bank_card_number': case 'ton_address':
                 return null;
             default:
                 throw new JsonError('Unsupported type specified');

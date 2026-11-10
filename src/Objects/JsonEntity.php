@@ -17,7 +17,7 @@ final class JsonEntity
         'Url' => 'url', 'EmailAddress' => 'email', 'PhoneNumber' => 'phone_number', 'BankCardNumber' => 'bank_card_number',
         'Bold' => 'bold', 'Italic' => 'italic', 'Underline' => 'underline', 'Strikethrough' => 'strikethrough',
         'Spoiler' => 'spoiler', 'Code' => 'code', 'Pre' => 'pre', 'BlockQuote' => 'blockquote',
-        'ExpandableBlockQuote' => 'expandable_blockquote',
+        'ExpandableBlockQuote' => 'expandable_blockquote', 'TonAddress' => 'ton_address',
     ];
 
     /**
