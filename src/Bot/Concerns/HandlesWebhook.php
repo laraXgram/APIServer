@@ -148,13 +148,13 @@ trait HandlesWebhook
         $this->updateLastSynchronizationErrorDate();
 
         $object = [
-            'url' => mb_check_encoding($this->webhookUrl, 'UTF-8') ? $this->webhookUrl : new JsonRawString($this->webhookUrl),
+            'url' => JsonRawString::bytes($this->webhookUrl),
             'has_custom_certificate' => $this->hasWebhookCertificate,
             'pending_update_count' => $this->getPendingUpdateCount(),
         ];
         if ($this->lastWebhookErrorDate > 0) {
             $object['last_error_date'] = $this->lastWebhookErrorDate;
-            $object['last_error_message'] = mb_check_encoding($this->lastWebhookError, 'UTF-8') ? $this->lastWebhookError : new JsonRawString($this->lastWebhookError);
+            $object['last_error_message'] = JsonRawString::bytes($this->lastWebhookError);
         }
         if ($this->webhookMaxConnections > 0) {
             $object['max_connections'] = $this->webhookMaxConnections;

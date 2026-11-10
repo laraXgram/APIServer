@@ -302,7 +302,7 @@ trait ReceivesQueries
     {
         if ($payload['_'] === 'callbackQueryPayloadData') {
             // non-UTF-8 data is written as it is (td::JsonRawString)
-            $object['data'] = mb_check_encoding($payload['data'], 'UTF-8') ? $payload['data'] : new JsonRawString($payload['data']);
+            $object['data'] = JsonRawString::bytes($payload['data']);
         } else {
             $object['game_short_name'] = $payload['game_short_name'];
         }
@@ -419,7 +419,7 @@ trait ReceivesQueries
         }
         $object['type'] = $this->widgetQueryTypeObject($queryType, $walletCard);
         $data = (string) ($update['data'] ?? '');
-        $object['data'] = mb_check_encoding($data, 'UTF-8') ? $data : new JsonRawString($data);
+        $object['data'] = JsonRawString::bytes($data);
         if ($widgetId !== 0 || $type === 'updateBotWidgetCopyQuery') {
             $object['widget_id'] = (string) $widgetId;
         }
@@ -507,7 +507,7 @@ trait ReceivesQueries
         $object = [
             'id' => (string) $update['query_id'],
             'from' => JsonUser::make($userId, $this),
-            'invoice_payload' => mb_check_encoding($payload, 'UTF-8') ? $payload : new JsonRawString($payload),
+            'invoice_payload' => JsonRawString::bytes($payload),
             'shipping_address' => self::addressObject($update['shipping_address'] ?? []),
         ];
         $this->addUpdate(UpdateType::SHIPPING_QUERY, JsonWriter::encode($object), 150, $userId + (4 << 33));
@@ -531,7 +531,7 @@ trait ReceivesQueries
             'from' => JsonUser::make($userId, $this),
             'currency' => (string) $update['currency'],
             'total_amount' => $totalAmount,
-            'invoice_payload' => mb_check_encoding($payload, 'UTF-8') ? $payload : new JsonRawString($payload),
+            'invoice_payload' => JsonRawString::bytes($payload),
         ];
         if ((string) ($update['shipping_option_id'] ?? '') !== '') {
             $object['shipping_option_id'] = (string) $update['shipping_option_id'];
