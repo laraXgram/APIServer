@@ -40,6 +40,9 @@ trait ReceivesUpdates
     /** @var array<string, MessageInfo> "chat_id:message_id" => message */
     private array $messages = [];
 
+    /** @var array<string, true> "chat_id:ephemeral_message_id" of received ephemeral messages (Dialog::ephemeral_message_ids) */
+    private array $receivedEphemeralMessages = [];
+
     private ?Query $longPollQuery = null;
 
     private int $longPollOffset = 0;
@@ -99,6 +102,9 @@ trait ReceivesUpdates
                     $this->addUpdate(UpdateType::POLL_ANSWER, JsonWriter::encode(JsonPoll::answer($answer, $this)), 86400, (int) $update['poll_id']);
                 }
                 break;
+            case 'updateNewEphemeralMessage':
+                $this->addNewEphemeralMessage($update['message'] ?? []);
+                break;
             case 'updateMessageWidgetData':
                 $this->onUpdateMessageWidgetData($update);
                 break;
@@ -134,6 +140,40 @@ trait ReceivesUpdates
         $this->newMessageQueues[$info->chatId] ??= ['queue' => [], 'active' => false];
         $this->newMessageQueues[$info->chatId]['queue'][] = [$info, $isEdited];
         $this->processNewMessageQueue($info->chatId);
+    }
+
+    /**
+     * MessagesManager::on_new_ephemeral_message → Client::add_new_message: an
+     * ephemeral message is a new message of its chat, even of a channel or a
+     * chat without the bot (an anchored replacement of a message is not).
+     *
+     * @param array<string, mixed> $message TL ephemeralMessage
+     */
+    private function addNewEphemeralMessage(array $message): void
+    {
+        if ((int) ($message['anchor_msg_id'] ?? 0) !== 0 || (int) ($message['receiver_id'] ?? 0) <= 0) {
+            return;
+        }
+        $info = $this->convertEphemeralMessage($message);
+        if ($info === null || $info->ephemeralMessageId <= 0) {
+            return;
+        }
+
+        $key = $info->chatId.':'.$info->ephemeralMessageId;
+        if (isset($this->receivedEphemeralMessages[$key])) {
+            return;
+        }
+        if (count($this->receivedEphemeralMessages) >= self::MAX_CACHED_MESSAGES) {
+            unset($this->receivedEphemeralMessages[array_key_first($this->receivedEphemeralMessages)]);
+        }
+        $this->receivedEphemeralMessages[$key] = true;
+
+        $this->loadStickerSetNames($this->messageStickerSets($info));
+        if ($this->needSkipUpdateMessage($info->chatId, $info, false)) {
+            return;
+        }
+        // ephemeral messages are sent by users even in channels
+        $this->addMessageUpdate(UpdateType::MESSAGE, $info, $info->chatId);
     }
 
     /**
@@ -407,7 +447,8 @@ trait ReceivesUpdates
 
         if (ChatId::type($chatId) === ChatId::TYPE_SUPERGROUP) {
             $channel = $this->getChannel(ChatId::toChannelId($chatId));
-            if ($channel === null || ($channel['_'] ?? '') === 'channelForbidden' || !empty($channel['left'])) {
+            // ephemeral messages are received without chat membership, for example, in placeholder chats
+            if (($channel === null || ($channel['_'] ?? '') === 'channelForbidden' || !empty($channel['left'])) && $message->ephemeralMessageId === 0) {
                 if ($contentType === 'messageChatDeleteMember') {
                     return (int) $message->content['user_id'] !== $this->getMyId();
                 }
