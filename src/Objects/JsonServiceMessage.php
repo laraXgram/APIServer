@@ -351,6 +351,8 @@ final class JsonServiceMessage
             case 'messageUnpaidMessagesAllowedByLink':
                 $object['paid_messages_waived'] = new \stdClass();
                 break;
+            case 'messageUpgradedGiftOnChainPurchaseOffer':
+                break;
         }
     }
 
@@ -491,13 +493,28 @@ final class JsonServiceMessage
             }
         }
 
-        $resale = self::resalePrice($action['resale_amount'] ?? null);
+        // an on-chain purchase keeps its exact TON price instead of a resale price
+        $onchainGramAmount = 0;
+        $resale = null;
+        if (!empty($action['assigned']) && ($action['resale_amount']['_'] ?? '') === 'starsTonAmount') {
+            $onchainGramAmount = max(0, min((int) ($action['resale_amount']['amount'] ?? 0), 1 << 51));
+        } else {
+            $resale = self::resalePrice($action['resale_amount'] ?? null);
+        }
         if (!empty($action['craft'])) {
             $object['origin'] = 'craft';
+        } elseif (!empty($action['assigned'])) {
+            if ($onchainGramAmount === 0) {
+                $object['origin'] = 'blockchain';
+            } elseif (!empty($action['from_offer'])) {
+                $object['origin'] = 'offer';
+            } else {
+                $object['origin'] = 'resale';
+                $object['last_resale_currency'] = 'TON';
+                $object['last_resale_amount'] = $onchainGramAmount;
+            }
         } elseif (!empty($action['from_offer'])) {
             $object['origin'] = 'offer';
-        } elseif (!empty($action['assigned'])) {
-            $object['origin'] = 'blockchain';
         } elseif ($isPrepaidUpgrade) {
             $object['origin'] = 'gifted_upgrade';
         } elseif ($resale !== null) {

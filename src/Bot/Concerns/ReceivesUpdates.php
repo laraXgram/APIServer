@@ -498,6 +498,7 @@ trait ReceivesUpdates
             case 'messageSuggestBirthdate': case 'messageUpgradedGiftPurchaseOffer':
             case 'messageUpgradedGiftPurchaseOfferRejected': case 'messageChatHasProtectedContentToggled':
             case 'messageChatHasProtectedContentDisableRequested': case 'messageTonConnectRequest':
+            case 'messageUpgradedGiftOnChainPurchaseOffer':
                 return true;
         }
 

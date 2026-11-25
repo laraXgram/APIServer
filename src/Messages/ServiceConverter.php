@@ -312,6 +312,14 @@ final class ServiceConverter
             case 'messageActionStarGiftPurchaseOfferDeclined':
                 return ['_' => 'messageUpgradedGiftPurchaseOfferRejected'];
 
+            case 'messageActionStarGiftOnchainOffer':
+                $gift = JsonGift::fromServer($action['gift'] ?? [], true);
+                if ($gift === null || !$gift['is_unique']) {
+                    break;
+                }
+
+                return ['_' => 'messageUpgradedGiftOnChainPurchaseOffer'];
+
             case 'messageActionTodoCompletions':
                 return ['_' => 'messageChecklistTasksDone', 'checklist_message_id' => $replyToMessageId,
                     'marked_as_done_task_ids' => array_map('intval', $action['completed'] ?? []),
