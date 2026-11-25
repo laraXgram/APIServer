@@ -215,6 +215,18 @@ trait ResolvesChats
     }
 
     /**
+     * Client::check_users: every user must be known.
+     *
+     * @param list<int> $userIds
+     */
+    public function checkUsers(array $userIds): void
+    {
+        foreach (array_unique($userIds) as $userId) {
+            $this->checkUser($userId);
+        }
+    }
+
+    /**
      * The TL InputPeer of a chat.
      *
      * @return array<string, mixed>

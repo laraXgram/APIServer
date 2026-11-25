@@ -98,7 +98,7 @@ trait BotManagementMethods
         if ($isRestricted && $query->hasArg('added_user_ids')) {
             $addedUserIds = self::getUserIds($query, 10, 'added_user_ids');
         }
-        $this->checkUser($userId);
+        $this->checkUsers([...$addedUserIds, $userId]);
 
         // BotInfoManager::set_bot_access_settings
         $this->checkBotData($userId);
