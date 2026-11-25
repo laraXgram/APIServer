@@ -99,7 +99,7 @@ trait ReceivesQueries
                     if ((int) ($update['top_msg_id'] ?? 0) !== 0) {
                         $object['message_thread_id'] = (int) $update['top_msg_id'];
                     }
-                    $object['draft_id'] = (string) (int) $action['random_id'];
+                    $object['draft_id'] = (int) $action['random_id'];
                     $this->addUpdate(UpdateType::STOP_MESSAGE_DRAFT, JsonWriter::encode($object), 150, $chatId + (15 << 33));
                 }
 
