@@ -17,7 +17,7 @@ final class JsonUser
     public static function make(int $userId, Client $client, bool $fullBotInfo = false): array
     {
         $user = $client->getUser($userId);
-        $isBot = $user !== null && !empty($user['bot']);
+        $isBot = ($user !== null && !empty($user['bot'])) || $fullBotInfo;
 
         $object = [
             'id' => $userId,
@@ -45,15 +45,24 @@ final class JsonUser
             $object['added_to_attachment_menu'] = true;
         }
 
-        if ($isBot && $fullBotInfo) {
+        if ($fullBotInfo) {
+            $activeUsernames = self::activeUsernames($user);
+            if ($activeUsernames !== []) {
+                $object['active_usernames'] = $activeUsernames;
+            }
             $forumView = !empty($user['bot_forum_view']);
             $object['can_join_groups'] = empty($user['bot_nochats']);
             $object['can_read_all_group_messages'] = !empty($user['bot_chat_history']);
             $object['supports_inline_queries'] = isset($user['bot_inline_placeholder']);
+            if (($user['bot_inline_placeholder'] ?? '') !== '') {
+                $object['inline_query_placeholder'] = (string) $user['bot_inline_placeholder'];
+            }
+            $object['needs_inline_query_location'] = !empty($user['bot_inline_geo']);
             $object['supports_guest_queries'] = !empty($user['bot_guestchat']);
             $object['can_connect_to_business'] = !empty($user['bot_business']);
             $object['has_main_web_app'] = !empty($user['bot_has_main_app']);
             $object['has_topics_enabled'] = $forumView;
+            $object['has_topic_sidebar'] = $forumView && !empty($user['bot_forum_sidebar']);
             $object['allows_users_to_create_topics'] = $forumView && !empty($user['bot_forum_can_manage_topics']);
             $object['can_manage_bots'] = !empty($user['bot_can_manage_bots']);
             $object['supports_join_request_queries'] = !empty($user['bot_guard']);

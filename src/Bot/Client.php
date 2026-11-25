@@ -1040,6 +1040,12 @@ final class Client
 
     public function processGetMeQuery(Query $query): void
     {
+        if (empty($this->getUser($this->myId)['bot'])) {
+            $this->parameters->logger->error("[bot{$this->botTokenId}] user isn't a bot");
+
+            throw new QueryError(500, 'Failed to get information about the bot');
+        }
+
         $query->answerQuery(JsonUser::make($this->myId, $this, true));
     }
 
