@@ -300,6 +300,68 @@ trait BotSettingsMethods
     }
 
     /**
+     * Bot API arguments of setMySettings, mapped to the `bots.setBotSettings`
+     * Bool flag each one sets (BotInfoManager::set_bot_settings).
+     */
+    private const BOT_SETTING_FLAGS = [
+        'supports_inline_queries' => 'inline_mode',
+        'needs_inline_query_location' => 'inline_geo',
+        'can_read_all_group_messages' => 'chat_history',
+        'can_connect_to_business' => 'business',
+        'can_manage_bots' => 'can_manage_bots',
+        'supports_guest_queries' => 'guestchat',
+        'supports_join_request_queries' => 'guard',
+        'has_topics_enabled' => 'forum_view',
+        'allows_users_to_create_topics' => 'forum_can_manage_topics',
+        'has_topic_sidebar' => 'forum_sidebar',
+        'can_communicate_with_bots' => 'bot_to_bot_communication_mode',
+    ];
+
+    public function processSetMySettingsQuery(Query $query): void
+    {
+        $params = [];
+        foreach (self::BOT_SETTING_FLAGS as $arg => $flag) {
+            if ($query->hasArg($arg)) {
+                $params[$flag] = self::boolArg($query, $arg);
+            }
+        }
+        if ($query->hasArg('inline_query_placeholder')) {
+            $placeholder = TextFormatting::cleanInputString($query->arg('inline_query_placeholder'));
+            if ($placeholder === null) {
+                throw new QueryError(400, 'Strings must be encoded in UTF-8');
+            }
+            $params['inline_placeholder'] = $placeholder;
+        }
+        if ($query->hasArg('inline_feedback_share_denominator')) {
+            $denominator = \LaraGram\Server\Support\TdInteger::toInt32($query->arg('inline_feedback_share_denominator'));
+            if (!in_array($denominator, [0, 1, 10, 100, 1000], true)) {
+                throw new QueryError(400, 'Invalid share denominator specified');
+            }
+            $params['inline_feedback'] = $denominator;
+        }
+        if ($query->hasArg('can_join_groups')) {
+            // the flag stores "can't join groups"
+            $params['nochats'] = !self::boolArg($query, 'can_join_groups');
+        }
+        if ($query->hasArg('callback_query_mode')) {
+            $params['callback_mode'] = match ($query->arg('callback_query_mode')) {
+                'default' => '',
+                'auto' => 'auto',
+                'inline' => 'inline',
+                default => throw new QueryError(400, 'Unsupported callback query mode specified'),
+            };
+        }
+
+        if ($params !== []) {
+            $user = $this->invokeOrFail('bots.setBotSettings', $params);
+            if (is_array($user)) {
+                $this->addUser($user);
+            }
+        }
+        $query->answerQuery(true);
+    }
+
+    /**
      * BotInfoManager::set_bot_* (SetBotInfoQuery).
      */
     private function setBotInfo(string $languageCode, string $field, string $value): void
