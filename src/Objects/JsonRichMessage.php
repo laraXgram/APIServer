@@ -200,14 +200,11 @@ final class JsonRichMessage
             case 'pageBlockOrderedList':
                 return ['type' => 'list', 'items' => $this->orderedListItems($block)];
             case 'pageBlockBlockquote':
-                if (!empty($block['collapsed'])) {
-                    return $this->withCredit(['type' => 'expandable_blockquote', 'text' => $this->text($block['text'])], $block['caption'] ?? null);
-                }
+                $blocks = [['type' => 'paragraph', 'text' => $this->text($block['text'])]];
 
-                return $this->withCredit(['type' => 'blockquote', 'blocks' => [['type' => 'paragraph', 'text' => $this->text($block['text'])]]],
-                    $block['caption'] ?? null);
+                return $this->blockquote($blocks, !empty($block['collapsed']), $block['caption'] ?? null);
             case 'pageBlockBlockquoteBlocks':
-                return $this->withCredit(['type' => 'blockquote', 'blocks' => $this->blocks($block['blocks'] ?? [])], $block['caption'] ?? null);
+                return $this->blockquote($this->blocks($block['blocks'] ?? []), !empty($block['collapsed']), $block['caption'] ?? null);
             case 'pageBlockPullquote':
                 return $this->withCredit(['type' => 'pullquote', 'text' => $this->text($block['text'])], $block['caption'] ?? null);
             case 'pageBlockCollage':
@@ -492,6 +489,25 @@ final class JsonRichMessage
         $object['caption'] = $value;
 
         return $object;
+    }
+
+    /**
+     * Client::JsonRichBlock for pageBlockBlockQuote / pageBlockExpandableBlockQuote:
+     * an expandable quote also keeps the text of a lone paragraph in `text`.
+     *
+     * @param list<array<string, mixed>> $blocks
+     * @param array<string, mixed>|null $credit TL RichText
+     * @return array<string, mixed>
+     */
+    private function blockquote(array $blocks, bool $isCollapsed, ?array $credit): array
+    {
+        if (!$isCollapsed) {
+            return $this->withCredit(['type' => 'blockquote', 'blocks' => $blocks], $credit);
+        }
+
+        $text = count($blocks) === 1 && $blocks[0]['type'] === 'paragraph' ? $blocks[0]['text'] : '';
+
+        return $this->withCredit(['type' => 'expandable_blockquote', 'blocks' => $blocks, 'text' => $text], $credit);
     }
 
     /**

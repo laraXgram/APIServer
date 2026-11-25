@@ -167,6 +167,12 @@ trait HandlesRichMessages
 
                 return ['_' => 'blockquote', 'blocks' => $blocks, 'credit' => $this->richTextFromJson($object->extractField('credit'))];
             case 'expandable_blockquote':
+                $blocks = $this->inputPageBlocksFromJson($query, $object->extractField('blocks'));
+                if ($blocks === [] && $object->hasField('text')) {
+                    $blocks[] = ['_' => 'paragraph', 'text' => $this->richTextFromJson($object->extractField('text'))];
+                }
+
+                return ['_' => $type, 'blocks' => $blocks, 'credit' => $this->richTextFromJson($object->extractField('credit'))];
             case 'pullquote':
                 $text = $this->richTextFromJson($object->extractField('text'));
 
@@ -484,17 +490,16 @@ trait HandlesRichMessages
             case 'list':
                 return $this->getInputPageBlockList($chatId, $block['items'], $rich);
             case 'blockquote':
+            case 'expandable_blockquote':
                 $blocks = $this->getInputPageBlocks($chatId, $block['blocks'], $rich);
 
-                return ['_' => 'pageBlockBlockquoteBlocks', 'blocks' => $blocks, 'caption' => $this->getInputRichText($block['credit'], $rich)];
-            case 'expandable_blockquote':
+                return ['_' => 'pageBlockBlockquoteBlocks', 'collapsed' => $block['_'] === 'expandable_blockquote',
+                    'blocks' => $blocks, 'caption' => $this->getInputRichText($block['credit'], $rich)];
             case 'pullquote':
                 $text = $this->getInputRichText($block['text'], $rich);
                 $credit = $this->getInputRichText($block['credit'], $rich);
 
-                return $block['_'] === 'pullquote'
-                    ? ['_' => 'pageBlockPullquote', 'text' => $text, 'caption' => $credit]
-                    : ['_' => 'pageBlockBlockquote', 'collapsed' => true, 'text' => $text, 'caption' => $credit];
+                return ['_' => 'pageBlockPullquote', 'text' => $text, 'caption' => $credit];
             case 'collage':
             case 'slideshow':
                 $blocks = $this->getInputPageBlocks($chatId, $block['blocks'], $rich);
