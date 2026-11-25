@@ -394,6 +394,14 @@ final class ServiceConverter
 
             case 'messageActionNoPaidMessagesTokenUsed':
                 return ['_' => 'messageUnpaidMessagesAllowedByLink'];
+
+            case 'messageActionBotInvite':
+                $inviterUserId = (int) ($action['inviter_id'] ?? 0);
+                if ($inviterUserId <= 0) {
+                    break;
+                }
+
+                return ['_' => 'messageBotInvite', 'inviter_user_id' => $inviterUserId];
         }
 
         // explicit empty or wrong action

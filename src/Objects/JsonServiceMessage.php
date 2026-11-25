@@ -351,6 +351,10 @@ final class JsonServiceMessage
             case 'messageUnpaidMessagesAllowedByLink':
                 $object['paid_messages_waived'] = new \stdClass();
                 break;
+            case 'messageBotInvite':
+                // Client::JsonBotInvite
+                $object['write_access_allowed'] = ['inviter' => JsonUser::make($content['inviter_user_id'], $client)];
+                break;
             case 'messageUpgradedGiftOnChainPurchaseOffer':
                 break;
         }
