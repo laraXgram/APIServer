@@ -10,7 +10,7 @@ namespace LaraGram\Server\Generated;
 final class MethodTable
 {
     /** Bot API version of the spec. */
-    public const VERSION = '10.4';
+    public const VERSION = '10.5';
 
     /** Lower-cased method name => handler on {@see \LaraGram\Server\Bot\Client}. */
     public const METHODS = [
@@ -108,6 +108,7 @@ final class MethodTable
         'replacemanagedbottoken' => 'processReplaceManagedBotTokenQuery',
         'getmanagedbotaccesssettings' => 'processGetManagedBotAccessSettingsQuery',
         'setmanagedbotaccesssettings' => 'processSetManagedBotAccessSettingsQuery',
+        'setmysettings' => 'processSetMySettingsQuery',
         'setmycommands' => 'processSetMyCommandsQuery',
         'deletemycommands' => 'processDeleteMyCommandsQuery',
         'getmycommands' => 'processGetMyCommandsQuery',
@@ -305,6 +306,7 @@ final class MethodTable
         'replacemanagedbottoken' => 'replaceManagedBotToken',
         'getmanagedbotaccesssettings' => 'getManagedBotAccessSettings',
         'setmanagedbotaccesssettings' => 'setManagedBotAccessSettings',
+        'setmysettings' => 'setMySettings',
         'setmycommands' => 'setMyCommands',
         'deletemycommands' => 'deleteMyCommands',
         'getmycommands' => 'getMyCommands',
