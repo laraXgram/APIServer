@@ -28,7 +28,7 @@
         "ext-openssl": "*",
         "ext-zlib": "*",
         "laraxgram/core": "^4.7",
-        "laraxgram/mtproto": "^0.4",
+        "laraxgram/mtproto": "^0.7",
         "laraxgram/surge": "^2.0"
     },
     "autoload": {
