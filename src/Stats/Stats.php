@@ -55,33 +55,34 @@ final class Stats
     }
 
     /**
-     * td::cpu_stat on Linux: the process user and system ticks and the total ticks of the machine.
+     * td::cpu_stat: the process user and system time and the total time of
+     * the machine, in microseconds.
+     *
+     * getrusage() is a single system call; td::cpu_stat's /proc/self/stat and
+     * /proc/stat reads went through Swoole's file I/O threads and were most of
+     * what an idle server spent. The total is the elapsed time of every CPU,
+     * which is what the ticks of /proc/stat add up to.
      *
      * @return array{total: int, user: int, system: int}|null
      */
     public static function cpu(): ?array
     {
-        $self = @file_get_contents('/proc/self/stat');
-        $total = @file_get_contents('/proc/stat');
-        if ($self === false || $total === false) {
+        $usage = getrusage();
+        if ($usage === false || !isset($usage['ru_utime.tv_sec'], $usage['ru_stime.tv_sec'])) {
             return null;
-        }
-        $fields = explode(' ', $self);
-        if (count($fields) < 16) {
-            return null;
-        }
-        $line = strstr($total, "\n", true);
-        $sum = 0;
-        preg_match_all('/\d+/', $line === false ? $total : $line, $numbers);
-        foreach ($numbers[0] as $number) {
-            $sum += (int) $number;
         }
 
-        return ['total' => $sum, 'user' => (int) $fields[13], 'system' => (int) $fields[14]];
+        return [
+            'total' => intdiv(hrtime(true), 1000) * self::cpuCount(),
+            'user' => $usage['ru_utime.tv_sec'] * 1_000_000 + $usage['ru_utime.tv_usec'],
+            'system' => $usage['ru_stime.tv_sec'] * 1_000_000 + $usage['ru_stime.tv_usec'],
+        ];
     }
 
     public static function cpuCount(): int
     {
-        return function_exists('swoole_cpu_num') ? max(1, swoole_cpu_num()) : 1;
+        static $count = null;
+
+        return $count ??= function_exists('swoole_cpu_num') ? max(1, swoole_cpu_num()) : 1;
     }
 }
