@@ -129,10 +129,6 @@ final class ClientManager
             $this->globalFloodControl->addLimit(60 * 60, 10000);
         }
 
-        foreach ($this->clients as $client) {
-            $client->trackConnectionState();
-        }
-
         $this->parameters->storageMonitor?->tick();
     }
 

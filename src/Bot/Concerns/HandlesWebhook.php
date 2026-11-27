@@ -200,15 +200,11 @@ trait HandlesWebhook
     }
 
     /**
-     * td_api::updateConnectionState, sampled once a second.
+     * td_api::updateConnectionState: the bot's link to Telegram dropped or came back.
      */
-    public function trackConnectionState(): void
+    private function onConnectionStateChanged(bool $connected): void
     {
-        if (!$this->wasAuthorized || $this->td === null) {
-            return;
-        }
-
-        if ($this->td->getConnection()->isConnected()) {
+        if ($connected) {
             $this->updateLastSynchronizationErrorDate();
             $this->disconnectionTime = 0.0;
         } elseif ($this->disconnectionTime === 0.0) {

@@ -265,6 +265,7 @@ final class Client
             ]);
 
             $this->td->connect(self::SESSION_NAME);
+            $this->td->onConnectionState(fn (bool $connected) => $this->onConnectionStateChanged($connected));
             $result = (new Authorization($this->td))->botLogin($this->botToken);
             $me = ($result['_'] ?? '') === 'user' ? $result : ($result['user'] ?? []);
 
