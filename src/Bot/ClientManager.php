@@ -16,6 +16,7 @@ use LaraGram\Server\Support\IpAddress;
 use LaraGram\Server\Support\TdInteger;
 use LaraGram\Server\Webhook\WebhookActor;
 use LaraGram\Server\Webhook\WebhookDb;
+use Swoole\Timer;
 
 /**
  * Routes queries to per-bot clients, creating them on first use:
@@ -118,18 +119,30 @@ final class ClientManager
     }
 
     /**
-     * Global client creation limits start shortly after start-up outside
-     * local mode (ClientManager::timeout_expired).
+     * Start the timed work of the server. Nothing wakes an idle server up
+     * once a second unless the statistics page needs the CPU readings: bots
+     * are told about their connection state and the storage clean-up sets a
+     * timer for its next run.
      */
-    public function tick(): void
+    public function startTimers(bool $sampleCpu): void
     {
-        if (!$this->isGlobalFloodControlEnabled && !$this->parameters->localMode) {
-            $this->isGlobalFloodControlEnabled = true;
-            $this->globalFloodControl->addLimit(60, 1000);
-            $this->globalFloodControl->addLimit(60 * 60, 10000);
+        // global client creation limits start shortly after start-up outside local mode (ClientManager::timeout_expired)
+        if (!$this->parameters->localMode) {
+            Timer::after(1000, function (): void {
+                if (!$this->isGlobalFloodControlEnabled) {
+                    $this->isGlobalFloodControlEnabled = true;
+                    $this->globalFloodControl->addLimit(60, 1000);
+                    $this->globalFloodControl->addLimit(60 * 60, 10000);
+                }
+            });
         }
 
-        $this->parameters->storageMonitor?->tick();
+        $this->parameters->storageMonitor?->start();
+
+        if ($sampleCpu) {
+            ServerCpuStat::update(microtime(true));
+            Timer::tick(ServerCpuStat::SAMPLE_INTERVAL, static fn () => ServerCpuStat::update(microtime(true)));
+        }
     }
 
     public function send(Query $query): void
@@ -258,6 +271,7 @@ final class ClientManager
         }
 
         $this->closeFlag = true;
+        $this->parameters->storageMonitor?->stop();
         foreach ($this->clients as $client) {
             $client->close();
         }
@@ -310,6 +324,8 @@ final class ClientManager
                 $lines[] = "rss_peak\t".Stats::size($memory['rss_peak']);
                 $lines[] = "vm_peak\t".Stats::size($memory['vm_peak']);
             }
+            // a reading now ends every window at the time of the request
+            ServerCpuStat::update($now);
             foreach (ServerCpuStat::instance()->asVector($now) as [$key, $value]) {
                 $lines[] = $key."\t".$value;
             }

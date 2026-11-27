@@ -8,6 +8,7 @@ use LaraGram\Filesystem\Filesystem;
 use LaraGram\Server\Foundation\ServerParameters;
 use LaraGram\Server\Support\Units;
 use Swoole\Coroutine;
+use Swoole\Timer;
 
 /**
  * Keeps the downloaded files within the retention policy while the server
@@ -26,6 +27,9 @@ final class StorageMonitor
     private const PRESSURE_DELAY = 60;
     private const FRUITLESS_PRESSURE_DELAY = 60 * 15;
 
+    /** The longest a timer is set for: a later run is checked again then. */
+    private const MAX_TIMER_DELAY = 60 * 60 * 24;
+
     private StorageCleaner $cleaner;
 
     private float $nextRunAt = 0.0;
@@ -33,6 +37,11 @@ final class StorageMonitor
     private float $nextPressureRunAt = 0.0;
 
     private bool $running = false;
+
+    /** The timer of the next check, if one is set. */
+    private ?int $timer = null;
+
+    private bool $stopped = false;
 
     private int $lastRun = 0;
 
@@ -69,9 +78,54 @@ final class StorageMonitor
     }
 
     /**
-     * Called once a second.
+     * Start the scheduled clean-ups. Instead of looking at the clock every
+     * second, a timer is set for the next run that is due.
      */
-    public function tick(): void
+    public function start(): void
+    {
+        $this->stopped = false;
+        $this->schedule();
+    }
+
+    /**
+     * No more clean-ups: the server is shutting down.
+     */
+    public function stop(): void
+    {
+        $this->stopped = true;
+        if ($this->timer !== null) {
+            Timer::clear($this->timer);
+            $this->timer = null;
+        }
+    }
+
+    /**
+     * Set the timer for the earliest due run: the scheduled one or, when bots
+     * are over a limit, the clean-up of those bots.
+     */
+    private function schedule(): void
+    {
+        if ($this->timer !== null) {
+            Timer::clear($this->timer);
+            $this->timer = null;
+        }
+        if ($this->running || $this->stopped) {
+            // a running clean-up schedules the next one when it finishes
+            return;
+        }
+
+        $at = $this->pressured !== [] ? min($this->nextRunAt, $this->nextPressureRunAt) : $this->nextRunAt;
+        $delay = min(max(0.001, $at - microtime(true)), self::MAX_TIMER_DELAY);
+        $this->timer = Timer::after((int) ceil($delay * 1000), function (): void {
+            $this->timer = null;
+            $this->check();
+        });
+    }
+
+    /**
+     * Start whichever run is due, or wait for the next one.
+     */
+    private function check(): void
     {
         if ($this->running) {
             return;
@@ -79,11 +133,13 @@ final class StorageMonitor
 
         $now = microtime(true);
         if ($now >= $this->nextRunAt) {
-            $this->start(null, true);
+            $this->run(null, true);
         } elseif ($this->pressured !== [] && $now >= $this->nextPressureRunAt) {
             $bots = $this->policy->scope === RetentionPolicy::SCOPE_SERVER ? null : array_keys($this->pressured);
             $this->pressured = [];
-            $this->start($bots, false);
+            $this->run($bots, false);
+        } else {
+            $this->schedule();
         }
     }
 
@@ -99,7 +155,11 @@ final class StorageMonitor
         unset($tally);
 
         if ($this->isOverLimit($bot)) {
+            $first = $this->pressured === [];
             $this->pressured[$bot] = true;
+            if ($first) {
+                $this->schedule();
+            }
         }
     }
 
@@ -133,7 +193,7 @@ final class StorageMonitor
     /**
      * @param list<string>|null $bots
      */
-    private function start(?array $bots, bool $scheduled): void
+    private function run(?array $bots, bool $scheduled): void
     {
         $this->running = true;
 
@@ -149,6 +209,7 @@ final class StorageMonitor
                     $this->nextRunAt = microtime(true) + $this->interval + mt_rand(self::START_DELAY, self::START_DELAY + self::START_RANDOM_DELAY);
                 }
                 $this->running = false;
+                $this->schedule();
             }
         });
     }

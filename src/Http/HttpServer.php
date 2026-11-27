@@ -6,7 +6,6 @@ namespace LaraGram\Server\Http;
 
 use LaraGram\Server\Bot\ClientManager;
 use LaraGram\Server\Foundation\ServerParameters;
-use LaraGram\Server\Stats\ServerCpuStat;
 use Swoole\Server;
 use Swoole\Timer;
 
@@ -70,15 +69,12 @@ final class HttpServer
             $server->addListener($this->settings['http_stat_ip_address'], $statPort, SWOOLE_SOCK_TCP);
         }
 
-        $server->on('workerStart', function (Server $server): void {
+        $server->on('workerStart', function (Server $server) use ($statPort): void {
             $this->clientManager = new ClientManager($this->parameters, $this->settings['token_range']);
             $this->connection = new HttpConnection($this->clientManager, $this->parameters->streamFiles);
             \Swoole\Coroutine::create(fn () => $this->clientManager?->restoreWebhooks());
-
-            Timer::tick(1000, function (): void {
-                $this->clientManager?->tick();
-                ServerCpuStat::update(microtime(true));
-            });
+            // the CPU readings are only shown on the statistics page
+            $this->clientManager->startTimers($statPort !== 0);
         });
 
         $server->on('workerExit', function (): void {
